@@ -3,23 +3,23 @@
     ====================================
     Adds the ability to create conversions of media files directly in your
     file browser.
-    
+
     Installation
     ------------
     In order to use this extension, it must be installed either to the global
     nautilus extensions directory or ~/.nautilus/python-extensions/ for each
     user that wishes to use it.
-    
+
     Note that this script will not run outside of Nautilus!
-    
+
     License
     -------
     Copyright 2011 Daniel G. Taylor <dan@programmer-art.org>
-    
+
     This file is part of Arista.
 
     Arista is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as 
+    it under the terms of the GNU Lesser General Public License as
     published by the Free Software Foundation, either version 2.1 of
     the License, or (at your option) any later version.
 
@@ -133,28 +133,28 @@ class MediaConvertExtension(nautilus.MenuProvider):
         for f in files:
             if f.get_mime_type() not in SUPPORTED_FORMATS:
                 return
-            
+
             if not f.get_uri().startswith("file://"):
                 return
-        
-        # Create the new menu item, with a submenu of devices each with a 
+
+        # Create the new menu item, with a submenu of devices each with a
         # submenu of presets for that particular device.
         menu = nautilus.MenuItem('Nautilus::convert_media',
                                  _('Convert for device'),
                                  _('Convert this media using a device preset'))
-        
+
         devices = nautilus.Menu()
         menu.set_submenu(devices)
-        
+
         presets = arista.presets.get().items()
         for shortname, device in sorted(presets, lambda x,y: cmp(x[1].name, y[1].name)):
             item = nautilus.MenuItem("Nautilus::convert_to_%s" % shortname,
                                      device.name,
                                      device.description)
-            
+
             presets = nautilus.Menu()
             item.set_submenu(presets)
-            
+
             for preset_name, preset in device.presets.items():
                 preset_item = nautilus.MenuItem(
                         "Nautilus::convert_to_%s_%s" % (shortname, preset.name),
@@ -164,11 +164,11 @@ class MediaConvertExtension(nautilus.MenuProvider):
                                     [f.get_uri()[7:] for f in files],
                                     shortname, preset.name)
                 presets.append_item(preset_item)
-            
+
             devices.append_item(item)
-        
+
         return menu,
-    
+
     def callback(self, menu, files, device_name, preset_name):
         """
             Called when a menu item is clicked. Start a transcode job for

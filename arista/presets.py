@@ -3,29 +3,29 @@
 """
     Arista Presets
     ==============
-    Objects for handling devices, presets, etc. 
-    
+    Objects for handling devices, presets, etc.
+
     Example Use
     -----------
     Presets are automatically loaded when the module is initialized.
-    
+
         >>> import arista.presets
         >>> arista.presets.get()
         { "name": Device, ... }
-    
+
     If you have other paths to load, use:
-    
+
         >>> arista.presets.load("file")
         >>> arista.presets.load_directory("path")
-    
+
     License
     -------
     Copyright 2008 - 2011 Daniel G. Taylor <dan@programmer-art.org>
-    
+
     This file is part of Arista.
 
     Arista is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as 
+    it under the terms of the GNU Lesser General Public License as
     published by the Free Software Foundation, either version 2.1 of
     the License, or (at your option) any later version.
 
@@ -76,7 +76,7 @@ class Fraction(gst.Fraction):
                           a '/' that represent a fraction
         """
         parts = str(value).split("/")
-        
+
         if len(parts) == 1:
             gst.Fraction.__init__(self, int(value), 1)
         elif len(parts) == 2:
@@ -99,7 +99,7 @@ class Author(object):
         """
         self.name = name
         self.email = email
-    
+
     def __repr__(self):
         return (self.name or self.email) and "%s <%s>" % (self.name, self.email) or ""
 
@@ -108,8 +108,8 @@ class Device(object):
         A device holds information about a product and several presets for that
         product. This includes the make, model, version, etc.
     """
-    def __init__(self, make = "Generic", model = "", description = "", 
-                 author = None, version = "", presets = None, icon = "", 
+    def __init__(self, make = "Generic", model = "", description = "",
+                 author = None, version = "", presets = None, icon = "",
                  default = ""):
         """
             @type make: str
@@ -135,27 +135,27 @@ class Device(object):
         self.make = make
         self.model = model
         self.description = description
-        
+
         if author is not None:
             self.author = author
         else:
             self.author = Author()
-            
+
         self.version = version
         self.presets = presets and presets or {}
         self.icon = icon
         self.default = default
-        
+
         self.filename = None
-    
+
     def __repr__(self):
         return "%s %s" % (self.make, self.model)
-    
+
     @property
     def name(self):
         """
             Get a friendly name for this device.
-            
+
             @rtype: str
             @return: Either the make and model or just the model of the device
                      for generic devices
@@ -164,21 +164,21 @@ class Device(object):
             return self.model
         else:
             return "%s %s" % (self.make, self.model)
-    
+
     @property
     def short_name(self):
         """
             Return the short name of this device preset.
         """
         return ".".join(os.path.basename(self.filename).split(".")[:-1])
-    
+
     @property
     def default_preset(self):
         """
             Get the default preset for this device. If no default has been
             defined, the first preset that was loaded is returned. If no
             presets have been defined an exception is raised.
-            
+
             @rtype: Preset
             @return: The default preset for this device
             @raise ValueError: No presets have been defined for this device
@@ -190,7 +190,7 @@ class Device(object):
         else:
             raise ValueError(_("No presets have been defined for " \
                                  "%(name)s") % { "name": self.name })
-        
+
         return preset
 
     @property
@@ -219,7 +219,7 @@ class Device(object):
                         rates.append("%s/%s" % (x.num, x.denom))
                 else:
                     rates.append("%s" % x)
-        
+
             data["presets"].append({
                 "name": preset.name,
                 "description": preset.description,
@@ -250,16 +250,16 @@ class Device(object):
                     "transform": preset.vcodec.transform,
                 },
             })
-        
+
         return json.dumps(data, indent=4)
-    
+
     def save(self):
         """
             Save this device and its presets to a file. The device.filename must
             be set to a valid path or an error will be thrown.
         """
         open(self.filename, "w").write(self.json)
-   
+
     def export(self, filename):
         """
             Export this device and all presets to a file. Creates a bzipped
@@ -268,20 +268,20 @@ class Device(object):
         """
         # Make sure all changes are saved
         self.save()
-        
+
         # Gather image files
         images = set()
         for name, preset in self.presets.items():
             if preset.icon:
                 images.add(preset.icon[7:])
-        
+
         files = " ".join([os.path.basename(self.filename)] + list(images))
-        
+
         cwd = os.getcwd()
         os.chdir(os.path.dirname(self.filename))
         subprocess.call("tar -cjf %s %s" % (filename, files), shell=True)
         os.chdir(cwd)
-    
+
     @staticmethod
     def from_json(data):
         parsed = json.loads(data)
@@ -341,7 +341,7 @@ class Preset(object):
         A preset representing audio and video encoding options for a particular
         device.
     """
-    def __init__(self, name = "", container = "", extension = "", 
+    def __init__(self, name = "", container = "", extension = "",
                  acodec = None, vcodec = None, device = None, icon = None,
                  version = None, description = None, author = None):
         """
@@ -368,10 +368,10 @@ class Preset(object):
         self.device = device
         self.version = version
         self.icon = icon
-    
+
     def __repr__(self):
         return "%s %s" % (self.name, self.container)
-    
+
     @property
     def pass_count(self):
         """
@@ -379,7 +379,7 @@ class Preset(object):
             @return: The number of passes in this preset
         """
         return max(len(self.vcodec.passes), len(self.acodec.passes))
-    
+
     @property
     def slug(self):
         """
@@ -388,16 +388,16 @@ class Preset(object):
                      or in links
         """
         slug = ".".join(os.path.basename(self.device.filename).split(".")[:-1]) + "-" + self.name.lower()
-        
+
         return slug.replace(" ", "_").replace("'", "").replace("/", "")
-    
+
     def check_elements(self, callback, *args):
         """
             Check the elements used in this preset. If they don't exist then
             let GStreamer offer to install them.
-            
+
             @type callback: callable(preset, success, *args)
-            @param callback: A method to call when the elements are all 
+            @param callback: A method to call when the elements are all
                              available or installation failed
             @rtype: bool
             @return: True if required elements are available, False otherwise
@@ -420,7 +420,7 @@ class Preset(object):
             "tee",
             "queue",
         ]
-        
+
         missing = []
         missingdesc = ""
         for element in elements:
@@ -430,7 +430,7 @@ class Preset(object):
                     missingdesc += ", %s" % element
                 else:
                     missingdesc += element
-        
+
         if missing:
             _log.info("Attempting to install elements: %s" % missingdesc)
             if gst.pbutils.install_plugins_supported():
@@ -443,7 +443,7 @@ class Preset(object):
                     else:
                         _log.error("Unable to install required elements!")
                         callback(self, False, *args)
-            
+
                 context = gst.pbutils.InstallPluginsContext()
                 gst.pbutils.install_plugins_async(missing, context,
                                                   install_done, "")
@@ -473,7 +473,7 @@ class Codec(object):
         self.passes = passes and passes or []
 
         self.rate = (Fraction(), Fraction())
-    
+
     def __repr__(self):
         return "%s %s" % (self.name, self.container)
 
@@ -502,27 +502,27 @@ class VideoCodec(Codec):
 def load(filename):
     """
         Load a filename into a new Device.
-        
+
         @type filename: str
         @param filename: The file to load
         @rtype: Device
         @return: A new device instance loaded from the file
     """
     device = Device.from_json(open(filename).read())
-    
+
     device.filename = filename
-    
+
     _log.debug(_("Loaded device %(device)s (%(presets)d presets)") % {
         "device": device.name,
         "presets": len(device.presets),
     })
-    
+
     return device
 
 def load_directory(directory):
     """
         Load an entire directory of device presets.
-        
+
         @type directory: str
         @param directory: The path to load
         @rtype: dict
@@ -540,7 +540,7 @@ def load_directory(directory):
 def get():
     """
         Get all loaded device presets.
-        
+
         @rtype: dict
         @return: A dictionary of Device objects where the keys are the short
                  name for the device
@@ -549,46 +549,46 @@ def get():
 
 def version_info():
     """
-        Generate a string of version information. Each line contains 
+        Generate a string of version information. Each line contains
         "name, version" for a particular preset file, where name is the key
         found in arista.presets.get().
-        
+
         This is used for checking for updates.
     """
     info = ""
-    
+
     for name, device in _presets.items():
         info += "%s, %s\n" % (name, device.version)
-        
+
     return info
 
 def extract(stream):
     """
         Extract a preset file into the user's local presets directory.
-        
+
         @type stream: a file-like object
         @param stream: The opened bzip2-compressed tar file of the preset
         @rtype: list
         @return: The installed device preset shortnames ["name1", "name2", ...]
     """
     local_path = os.path.expanduser(os.path.join("~", ".arista", "presets"))
-    
+
     if not os.path.exists(local_path):
         os.makedirs(local_path)
-        
+
     tar = tarfile.open(mode="r|bz2", fileobj=stream)
     _log.debug(_("Extracting %(filename)s") % {
         "filename": hasattr(stream, "name") and stream.name or "data stream",
     })
     tar.extractall(path=local_path)
-    
+
     return [x[:-5] for x in tar.getnames() if x.endswith(".json")]
 
 def fetch(location, name):
     """
         Attempt to fetch and install a preset. Presets are always installed
         to ~/.arista/presets/.
-        
+
         @type location: str
         @param location: The location of the preset
         @type name: str
@@ -598,14 +598,14 @@ def fetch(location, name):
     """
     if not location.endswith("/"):
         location = location + "/"
-    
+
     path = location + name + ".tar.bz2"
     _log.debug(_("Fetching %(location)s") % {
         "location": path,
     })
-    
+
     updated = []
-    
+
     try:
         f = urllib2.urlopen(path)
         updated += extract(f)
@@ -615,30 +615,30 @@ def fetch(location, name):
             "location": path,
             "error": str(e),
         })
-    
+
     return updated
 
 def reset(overwrite=False, ignore_initial=False):
     # Automatically load presets
     global _presets
-    
+
     _presets = {}
-    
+
     load_path = utils.get_write_path("presets")
     if ignore_initial or not os.path.exists(os.path.join(load_path, ".initial_complete")):
         # Do initial population of presets from system install / cwd
         if not os.path.exists(load_path):
             os.makedirs(load_path)
-            
+
         # Write file to say we have done this
         open(os.path.join(load_path, ".initial_complete"), "w").close()
-        
+
         # Copy actual files
         search_paths = utils.get_search_paths()
         if overwrite:
             # Reverse search paths because things will get overwritten
             search_paths = reversed(search_paths)
-        
+
         for path in search_paths:
             full = os.path.join(path, "presets")
             if full != load_path and os.path.exists(full):
@@ -646,7 +646,7 @@ def reset(overwrite=False, ignore_initial=False):
                     # Do not overwrite existing files
                     if overwrite or not os.path.exists(os.path.join(load_path, f)):
                         shutil.copy2(os.path.join(full, f), load_path)
-    
+
     load_directory(load_path)
 
 reset()

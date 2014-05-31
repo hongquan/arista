@@ -6,15 +6,15 @@
     =======================================
     An audio/video transcoder based on simple device profiles provided by
     plugins. This is the command-line version.
-    
+
     License
     -------
     Copyright 2008 - 2011 Daniel G. Taylor <dan@programmer-art.org>
-    
+
     This file is part of Arista.
 
     Arista is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as 
+    it under the terms of the GNU Lesser General Public License as
     published by the Free Software Foundation, either version 2.1 of
     the License, or (at your option) any later version.
 
@@ -65,16 +65,16 @@ def print_status(enc, options):
     global status_msg
     global interrupted
     percent = 0.0
-    
+
     if interrupted or not enc:
         return True
-    
+
     if enc.state == gst.STATE_NULL and interrupted:
         gobject.idle_add(loop.quit)
         return False
     elif enc.state != gst.STATE_PLAYING:
         return True
-    
+
     try:
         percent, time_rem = enc.status
 
@@ -89,7 +89,7 @@ def print_status(enc, options):
             status_msg = msg
     except arista.transcoder.TranscoderStatusException, e:
         print str(e)
-    
+
     return (percent < 100)
 
 def entry_start(queue, entry, options):
@@ -99,14 +99,14 @@ def entry_start(queue, entry, options):
             "device": options.device,
             "preset": options.preset or _("default"),
         }
-    
+
     gobject.timeout_add(500, print_status, entry.transcoder, options)
 
 def entry_pass_setup(queue, entry, options):
     if not options.quiet:
         if entry.transcoder.enc_pass > 0:
             print # blank line
-        
+
         info = entry.transcoder.info
         preset = entry.transcoder.preset
         if (info.is_video and len(preset.vcodec.passes) > 1) or \
@@ -119,9 +119,9 @@ def entry_pass_setup(queue, entry, options):
 def entry_complete(queue, entry, options):
     if not options.quiet:
         print
-        
+
     entry.transcoder.stop()
-    
+
     if len(queue) == 1:
         # We are the last item!
         gobject.idle_add(loop.quit)
@@ -134,9 +134,9 @@ def entry_error(queue, entry, errorstr, options):
                 "preset": options.preset or _("default"),
             }
         print errorstr
-        
+
     entry.transcoder.stop()
-    
+
     if len(queue) == 1:
         # We are the last item!
         gobject.idle_add(loop.quit)
@@ -153,7 +153,7 @@ def check_interrupted():
         except:
             # Something pretty bad happened... just exit!
             gobject.idle_add(loop.quit)
-            
+
         return False
     return True
 
@@ -171,12 +171,12 @@ if __name__ == "__main__":
     parser = OptionParser(usage = _("%prog [options] infile [infile infile ...]"),
                           version = _("Arista Transcoder " + arista.__version__))
     parser.add_option("-i", "--info", dest = "info", action = "store_true",
-                      default = False, 
+                      default = False,
                       help = _("Show information about available devices " \
                                "[false]"))
     parser.add_option("-S", "--subtitle", dest = "subtitle", default = None,
                       help = _("Subtitle file to render"))
-    parser.add_option("-e", "--ssa", dest = "ssa", action = "store_true", 
+    parser.add_option("-e", "--ssa", dest = "ssa", action = "store_true",
                       default = False,
                       help = _("Render embedded SSA subtitles"))
     parser.add_option("--subtitle-encoding", dest = "subtitle_encoding",
@@ -193,9 +193,9 @@ if __name__ == "__main__":
     parser.add_option("-o", "--output", dest = "output", default = None,
                       help = _("Output file name [auto]"), metavar = "FILENAME")
     parser.add_option("-s", "--source-info", dest = "source_info",
-                      action = "store_true", default = False, 
+                      action = "store_true", default = False,
                       help = _("Show information about input file and exit"))
-    parser.add_option("-q", "--quiet", dest = "quiet", action = "store_true", 
+    parser.add_option("-q", "--quiet", dest = "quiet", action = "store_true",
                       default = False,
                       help = _("Don't show status and time remaining"))
     parser.add_option("-v", "--verbose", dest = "verbose",
@@ -209,48 +209,48 @@ if __name__ == "__main__":
                       help = _("Reset presets to factory defaults"))
 
     options, args = parser.parse_args()
-    
+
     logging.basicConfig(level = options.verbose and logging.DEBUG \
                         or logging.INFO, format = "%(name)s [%(lineno)d]: " \
                         "%(levelname)s %(message)s")
-    
+
     # FIXME: OMGWTFBBQ gstreamer hijacks sys.argv unless we import AFTER we use
     # the optionparser stuff above...
     # This seems to be fixed http://bugzilla.gnome.org/show_bug.cgi?id=425847
     # but in my testing it is NOT. Leaving hacks for now.
     import gst
-    
+
     arista.init()
-    
+
     from arista.transcoder import TranscoderOptions
-    
+
     lc_path = arista.utils.get_path("locale", default = "")
     if lc_path:
         if hasattr(gettext, "bindtextdomain"):
             gettext.bindtextdomain("arista", lc_path)
         if hasattr(locale, "bindtextdomain"):
             locale.bindtextdomain("arista", lc_path)
-    
+
     if hasattr(gettext, "bind_textdomain_codeset"):
         gettext.bind_textdomain_codeset("arista", "UTF-8")
     if hasattr(locale, "bind_textdomain_codeset"):
         locale.bind_textdomain_codeset("arista", "UTF-8")
-    
+
     if hasattr(gettext, "textdomain"):
         gettext.textdomain("arista")
     if hasattr(locale, "textdomain"):
         locale.textdomain("arista")
-    
+
     devices = arista.presets.get()
-    
+
     if options.info and not args:
         print _("Available devices:")
         print
-        
+
         longest = 0
         for name in devices:
             longest = max(longest, len(name))
-            
+
         for name in sorted(devices.keys()):
             print _("%(name)s: %(description)s") % {
                 "name": name.rjust(longest + 1),
@@ -272,7 +272,7 @@ if __name__ == "__main__":
         except KeyError:
             print _("Device not found!")
             raise SystemExit(1)
-        
+
         preset = None
         if len(args) > 1:
             for p in device.presets:
@@ -282,13 +282,13 @@ if __name__ == "__main__":
             else:
                 print _("Preset not found!")
                 raise SystemExit(1)
-        
+
         if preset:
             print _("Preset info:")
         else:
             print _("Device info:")
-        print 
-        
+        print
+
         info = [
             (_("ID:"), args[0]),
             (_("Make:"), device.make),
@@ -297,7 +297,7 @@ if __name__ == "__main__":
             (_("Author:"), preset and unicode(preset.author) or unicode(device.author)),
             (_("Version:"), preset and preset.version or device.version),
         ]
-        
+
         if not preset:
             info.append((_("Presets:"), ", ".join([(p.name == device.default and "*" + p.name or p.name) for (id, p) in device.presets.items()])))
         else:
@@ -338,17 +338,17 @@ if __name__ == "__main__":
             print _("You may only pass one filename for --source-info!")
             parser.print_help()
             raise SystemExit(1)
-        
+
         def _got_info(info, is_media):
             discoverer.print_info()
             loop.quit()
-        
+
         discoverer = arista.discoverer.Discoverer(args[0])
         discoverer.connect("discovered", _got_info)
         discoverer.discover()
-        
+
         print _("Discovering file info...")
-        
+
         loop = gobject.MainLoop()
         loop.run()
     elif options.install:
@@ -361,9 +361,9 @@ if __name__ == "__main__":
         if len(args) < 1:
             parser.print_help()
             raise SystemExit(1)
-        
+
         device = devices[options.device]
-        
+
         if not options.preset:
             preset = device.presets[device.default]
         else:
@@ -376,7 +376,7 @@ if __name__ == "__main__":
                 if c < 0:
                     print _("All parameters to --crop/-c must be non negative integers. %i is negative, aborting.") % c
                     raise SystemExit()
-            
+
         outputs = []
         queue = arista.queue.TranscodeQueue()
         for arg in args:
@@ -385,31 +385,31 @@ if __name__ == "__main__":
             else:
                 output = arista.utils.generate_output_path(arg, preset,
                              to_be_created=outputs, device_name=options.device)
-            
+
             outputs.append(output)
-        
+
             opts = TranscoderOptions(arg, preset, output,
                                      ssa=options.ssa,
                                      subfile = options.subtitle,
                                      subfile_charset = options.subtitle_encoding,
                                      font = options.font,
                                      crop = options.crop)
-            
+
             queue.append(opts)
-        
+
         queue.connect("entry-start", entry_start, options)
         queue.connect("entry-pass-setup", entry_pass_setup, options)
         queue.connect("entry-error", entry_error, options)
         queue.connect("entry-complete", entry_complete, options)
-        
+
         if len(queue) > 1:
             print _("Processing %(job_count)d jobs...") % {
                 "job_count": len(queue),
             }
-        
+
         signal.signal(signal.SIGINT, signal_handler)
         gobject.timeout_add(50, check_interrupted)
-        
+
         loop = gobject.MainLoop()
         loop.run()
 

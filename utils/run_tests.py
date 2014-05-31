@@ -15,7 +15,7 @@ import arista; arista.init()
 
 if not os.path.exists("tests"):
 	os.system("./utils/generate_tests.py")
-	
+
 files = os.listdir("tests")
 
 status = []
