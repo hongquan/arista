@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
     Arista Transcoder
@@ -26,12 +26,11 @@
     <http://www.gnu.org/licenses/>.
 """
 
-import gettext
-import logging
 import os
 import os.path
-import sys
 import time
+import gettext
+import logging
 
 # Default to 2 CPUs as most seem to be dual-core these days
 CPU_COUNT = 2
@@ -44,13 +43,24 @@ try:
 except ImportError:
     pass
 
-import gobject
-import gst
+import gi
 
-import discoverer
+gi.require_version('Gst', '1.0')
+gi.require_version('GstPbutils', '1.0')
+from gi.repository import GObject
+from gi.repository import GLib
+from gi.repository import Gst
+from gi.repository import GstPbutils
+
+from . import discoverer
+from .discoverer import is_audio, is_video, get_range_value, \
+    get_video_dimension, get_array_value
+from .presets import remove_param_from_passes
+from .utils import expand_capacity
 
 _ = gettext.gettext
 _log = logging.getLogger("arista.transcoder")
+
 
 # =============================================================================
 # Custom exceptions
@@ -142,22 +152,22 @@ class TranscoderOptions(object):
 # The Transcoder
 # =============================================================================
 
-class Transcoder(gobject.GObject):
+class Transcoder(GObject.GObject):
     """
         The transcoder - converts media between formats.
     """
     __gsignals__ = {
-        "discovered": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                      (gobject.TYPE_PYOBJECT,      # info
-                       gobject.TYPE_PYOBJECT)),    # is_media
-        "pass-setup": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, tuple()),
-        "pass-complete": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, tuple()),
-        "message": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                   (gobject.TYPE_PYOBJECT,         # bus
-                    gobject.TYPE_PYOBJECT)),       # message
-        "complete": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, tuple()),
-        "error": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                 (gobject.TYPE_PYOBJECT,)),        # error
+        "discovered": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                      (GObject.TYPE_PYOBJECT,      # info
+                       GObject.TYPE_PYOBJECT)),    # is_media
+        "pass-setup": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
+        "pass-complete": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
+        "message": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                   (GObject.TYPE_PYOBJECT,         # bus
+                    GObject.TYPE_PYOBJECT)),       # message
+        "complete": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
+        "error": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                 (GObject.TYPE_PYOBJECT,)),        # error
     }
 
     def __init__(self, options):
@@ -166,7 +176,7 @@ class Transcoder(gobject.GObject):
             @param options: The options, like input uri, subtitles, preset,
                             output uri, etc.
         """
-        self.__gobject_init__()
+        super().__init__()
         self.options = options
 
         self.pipe = None
@@ -216,12 +226,12 @@ class Transcoder(gobject.GObject):
                         "filename": self.options.uri,
                     })
 
-                    self.emit("discovered", self.info, self.info.is_video or self.info.is_audio)
+                    self.emit("discovered", self.info, is_video(self.info) or is_audio(self.info))
 
-                    if self.info.is_video or self.info.is_audio:
+                    if is_video(self.info) or is_audio(self.info):
                         try:
                             self._setup_pass()
-                        except PipelineException, e:
+                        except PipelineException as e:
                             self.emit("error", str(e))
                             return
 
@@ -238,23 +248,11 @@ class Transcoder(gobject.GObject):
             self.discoverer.discover()
 
         else:
-            def _got_info(info, is_media):
-                self.info = info
-                self.emit("discovered", info, is_media)
-
-                if info.is_video or info.is_audio:
-                    try:
-                        self._setup_pass()
-                    except PipelineException, e:
-                        self.emit("error", str(e))
-                        return
-
-                    self.start()
-
             self.info = None
-            self.discoverer = discoverer.Discoverer(options.uri)
-            self.discoverer.connect("discovered", _got_info)
-            self.discoverer.discover()
+            self.discoverer = discoverer.Discoverer.new(Gst.SECOND*5)
+            self.discoverer.connect("discovered", self.on_got_info)
+            self.discoverer.start()
+            self.discoverer.discover_uri_async(options.uri)
 
     @property
     def infile(self):
@@ -280,12 +278,12 @@ class Transcoder(gobject.GObject):
 
     def _get_source(self):
         """
-            Return a file or dvd source string usable with gst.parse_launch.
+            Return a file or dvd source string usable with Gst.parse_launch.
 
             This method uses self.infile to generate its output.
 
             @rtype: string
-            @return: Source to prepend to gst-launch style strings.
+            @return: Source to prepend to Gst-launch style strings.
         """
         if self.infile.startswith("dvd://"):
             parts = self.infile.split("@")
@@ -296,11 +294,11 @@ class Transcoder(gobject.GObject):
             if rest:
                 try:
                     title = int(rest[0])
-                except:
+                except (TypeError, ValueError, IndexError):
                     title = 1
                 try:
                     chapter = int(rest[1])
-                except:
+                except (TypeError, ValueError, IndexError):
                     chapter = None
 
             if self.options.deinterlace is None:
@@ -322,13 +320,9 @@ class Transcoder(gobject.GObject):
             GStreamer elements and their setttings for a particular pass.
         """
         # Get limits and setup caps
-        self.vcaps = gst.Caps()
-        self.vcaps.append_structure(gst.Structure("video/x-raw-yuv"))
-        self.vcaps.append_structure(gst.Structure("video/x-raw-rgb"))
+        self.vcaps = Gst.Caps.new_empty_simple('video/x-raw')
 
-        self.acaps = gst.Caps()
-        self.acaps.append_structure(gst.Structure("audio/x-raw-int"))
-        self.acaps.append_structure(gst.Structure("audio/x-raw-float"))
+        self.acaps = Gst.Caps.new_empty_simple('audio/x-raw')
 
         # =====================================================================
         # Setup video, audio/video, or audio transcode pipeline
@@ -336,13 +330,13 @@ class Transcoder(gobject.GObject):
 
         # Figure out which mux element to use
         container = None
-        if self.info.is_video and self.info.is_audio:
+        if is_video(self.info) and is_audio(self.info):
             container = self.preset.container
-        elif self.info.is_video:
+        elif is_video(self.info):
             container = self.preset.vcodec.container and \
                         self.preset.vcodec.container or \
                         self.preset.container
-        elif self.info.is_audio:
+        elif is_audio(self.info):
             container = self.preset.acodec.container and \
                         self.preset.acodec.container or \
                         self.preset.container
@@ -363,31 +357,29 @@ class Transcoder(gobject.GObject):
         cmd = "%s %s filesink name=sink " \
               "location=\"%s\"" % (src, mux_str, self.options.output_uri)
 
-        if self.info.is_video and self.preset.vcodec:
+        if is_video(self.info) and self.preset.vcodec:
             # =================================================================
             # Update limits based on what the encoder really supports
             # =================================================================
-            element = gst.element_factory_make(self.preset.vcodec.name,
-                                               "vencoder")
+            element = Gst.ElementFactory.make(self.preset.vcodec.name,
+                                              "videoencoder")
 
             # TODO: Add rate limits based on encoder sink below
-            for cap in element.get_pad("sink").get_caps():
-                for field in ["width", "height"]:
-                    if cap.has_field(field):
-                        value = cap[field]
-                        if isinstance(value, gst.IntRange):
-                            vmin, vmax = value.low, value.high
-                        else:
-                            vmin, vmax = value, value
+            cap = element.get_static_pad("sink").query_caps()
+            struct = cap.get_structure(0)
+            for field in ('width', 'height'):
+                if struct.has_field(field):
+                    range_data = get_range_value(struct, field)
+                    vmin, vmax = range_data.start, range_data.stop - 1
 
-                        cur = getattr(self.preset.vcodec, field)
-                        if cur[0] < vmin:
-                            cur = (vmin, cur[1])
-                            setattr(self.preset.vcodec, field, cur)
+                    cur = getattr(self.preset.vcodec, field)
+                    if cur[0] < vmin:
+                        cur = (vmin, cur[1])
+                        setattr(self.preset.vcodec, field, cur)
 
-                        if cur[1] > vmax:
-                            cur = (cur[0], vmax)
-                            setattr(self.preset.vcodec, field, cur)
+                    if cur[1] > vmax:
+                        cur = (cur[0], vmax)
+                        setattr(self.preset.vcodec, field, cur)
 
             # =================================================================
             # Calculate video width/height, crop and add black bars if necessary
@@ -402,15 +394,16 @@ class Transcoder(gobject.GObject):
             wmin, wmax = self.preset.vcodec.width
             hmin, hmax = self.preset.vcodec.height
 
-            owidth = self.info.videowidth - crop[1] - crop[3]
-            oheight = self.info.videoheight - crop[0] - crop[2]
+            video_w, video_h = get_video_dimension(self.info)
+            owidth = video_w - crop[1] - crop[3]
+            oheight = video_h - crop[0] - crop[2]
 
             try:
-                if self.info.videocaps[0].has_key("pixel-aspect-ratio"):
-                    owidth = int(owidth * float(self.info.videocaps[0]["pixel-aspect-ratio"]))
+                v_stream = self.info.get_video_streams()[0]
+                owidth = int(owidth * v_stream.get_par_num() / v_stream.get_par_denom())
             except KeyError:
                 # The videocaps we are looking for may not even exist, just ignore
-                pass
+                v_stream = None
 
             width, height = owidth, oheight
 
@@ -437,72 +430,29 @@ class Transcoder(gobject.GObject):
             if width < wmin and height < hmin:
                 wpx = (wmin - width) / 2
                 hpx = (hmin - height) / 2
-                vbox = "videobox left=%i right=%i top=%i bottom=%i ! ffmpegcolorspace ! " % \
+                vbox = "videobox left=%i right=%i top=%i bottom=%i ! videoconvert ! " % \
                        (-wpx, -wpx, -hpx, -hpx)
             elif width < wmin:
                 px = (wmin - width) / 2
-                vbox = "videobox left=%i right=%i ! ffmpegcolorspace ! " % \
+                vbox = "videobox left=%i right=%i ! videoconvert ! " % \
                        (-px, -px)
             elif height < hmin:
                 px = (hmin - height) / 2
-                vbox = "videobox top=%i bottom=%i ! ffmpegcolorspace ! " % \
+                vbox = "videobox top=%i bottom=%i ! videoconvert ! " % \
                        (-px, -px)
 
-            # FIXME Odd widths / heights seem to freeze gstreamer
+            # FIXME Odd widths / heights seem to freeze Gstreamer
             if width % 2:
                 width += 1
             if height % 2:
                 height += 1
 
-            for vcap in self.vcaps:
-                vcap["width"] = width
-                vcap["height"] = height
+            self.vcaps.set_value('width', width)
+            self.vcaps.set_value('height', height)
+            print(self.vcaps.to_string())
 
-            # =================================================================
-            # Setup video framerate and add to caps
-            # =================================================================
-            rmin = self.preset.vcodec.rate[0].num / \
-                   float(self.preset.vcodec.rate[0].denom)
-            rmax = self.preset.vcodec.rate[1].num / \
-                   float(self.preset.vcodec.rate[1].denom)
-            orate = self.info.videorate.num / float(self.info.videorate.denom)
-
-            if orate > rmax:
-                num = self.preset.vcodec.rate[1].num
-                denom = self.preset.vcodec.rate[1].denom
-            elif orate < rmin:
-                num = self.preset.vcodec.rate[0].num
-                denom = self.preset.vcodec.rate[0].denom
-            else:
-                num = self.info.videorate.num
-                denom = self.info.videorate.denom
-
-            for vcap in self.vcaps:
-                vcap["framerate"] = gst.Fraction(num, denom)
-
-            # =================================================================
-            # Properly handle and pass through pixel aspect ratio information
-            # =================================================================
-            for x in range(self.info.videocaps.get_size()):
-                struct = self.info.videocaps[x]
-                if struct.has_field("pixel-aspect-ratio"):
-                    # There was a bug in xvidenc that flipped the fraction
-                    # Fixed in svn on 12 March 2008
-                    # We need to flip the fraction on older releases!
-                    par = struct["pixel-aspect-ratio"]
-                    if self.preset.vcodec.name == "xvidenc":
-                        for p in gst.registry_get_default().get_plugin_list():
-                            if p.get_name() == "xvid":
-                                if p.get_version() <= "0.10.6":
-                                    par.num, par.denom = par.denom, par.num
-                    for vcap in self.vcaps:
-                        vcap["pixel-aspect-ratio"] = par
-                    break
-
-            # FIXME a bunch of stuff doesn't seem to like pixel aspect ratios
-            # Just force everything to go to 1:1 for now...
-            for vcap in self.vcaps:
-                vcap["pixel-aspect-ratio"] = gst.Fraction(1, 1)
+            # TODO: Set framerate and pixel-aspect-ratio
+            # when gir-gstreamer supports
 
             # =================================================================
             # Setup the video encoder and options
@@ -514,7 +464,7 @@ class Transcoder(gobject.GObject):
 
             deint = ""
             if self.options.deinterlace:
-                deint = " ffdeinterlace ! "
+                deint = " avdeinterlace ! "
 
             transform = ""
             if self.preset.vcodec.transform:
@@ -547,62 +497,63 @@ class Transcoder(gobject.GObject):
                 }
 
             vmux = premux
-            if container in ["qtmux", "webmmux", "ffmux_dvd", "matroskamux"]:
+            if container in ("qtmux", "webmmux", "avmux_dvd", "matroskamux", "mp4mux"):
                 if premux.startswith("mux"):
-                    vmux += "video_%d"
+                    vmux += "video_%u"
 
-            cmd += " dmux. ! queue ! ffmpegcolorspace ! videorate !" \
+            cmd += " dmux. ! queue ! videoconvert ! videorate !" \
                    "%s %s %s %s videoscale ! %s ! %s%s ! tee " \
                    "name=videotee ! queue ! %s" % \
                    (deint, vcrop, transform, sub, self.vcaps.to_string(), vbox,
                     vencoder, vmux)
 
-        if self.info.is_audio and self.preset.acodec and \
+        if is_audio(self.info) and self.preset.acodec and \
            self.enc_pass == len(self.preset.vcodec.passes) - 1:
             # =================================================================
             # Update limits based on what the encoder really supports
             # =================================================================
-            element = gst.element_factory_make(self.preset.acodec.name,
-                                               "aencoder")
+            element = Gst.ElementFactory.make(self.preset.acodec.name,
+                                              'audioencoder')
+            # When facc is missing, use avenc_aac and avmux_mp4
+            # Ref: https://bugs.launchpad.net/ubuntu/+source/gst-plugins-bad1.0/+bug/1299376
+            if element is None and self.preset.acodec.name == 'faac':
+                self.preset.acodec.name = 'avenc_aac'
+                self.preset.acodec.passes[0] += ' compliance=experimental'
+                self.preset.acodec.container = 'mp4mux'
+                self.preset.acodec.passes = \
+                    remove_param_from_passes(self.preset.acodec.passes, 'profile')
+                element = Gst.ElementFactory.make('avenc_aac', 'audioencoder')
 
-            fields = {}
-            for cap in element.get_pad("sink").get_caps():
-                for field in ["width", "depth", "rate", "channels"]:
-                    if cap.has_field(field):
-                        if field not in fields:
-                            fields[field] = [0, 0]
-                        value = cap[field]
-                        if isinstance(value, gst.IntRange):
-                            vmin, vmax = value.low, value.high
-                        else:
-                            vmin, vmax = value, value
-
-                        if vmin < fields[field][0]:
-                            fields[field][0] = vmin
-                        if vmax > fields[field][1]:
-                            fields[field][1] = vmax
-
-            for name, (amin, amax) in fields.items():
-                cur = getattr(self.preset.acodec, field)
-                if cur[0] < amin:
-                    cur = (amin, cur[1])
-                    setattr(self.preset.acodec, field, cur)
-                if cur[1] > amax:
-                    cur = (cur[0], amax)
-                    setattr(self.preset.acodec, field, cur)
+            cap = element.get_static_pad("sink").query_caps()
+            # Get maximum capable rates and channels which encoder can produce,
+            # and make the preset's rates, channels fit in.
+            # Note, the value returned from encoder can be a range, or array
+            capable_rates = range(0, 0)
+            capable_channels = range(0, 0)
+            for i in range(cap.get_size()):
+                struct = cap.get_structure(i)
+                if struct.has_field('rate'):
+                    new = get_range_value(struct, 'rate')
+                    if not new:
+                        new = get_array_value(struct, 'rate')
+                    if new:
+                        capable_rates = expand_capacity(capable_rates, new)
+                        self.preset.acodec.rate = capable_rates
+                if struct.has_field('channels'):
+                    new = get_range_value(struct, 'channels')
+                    if not new:
+                        new = get_array_value(struct, 'channels')
+                    if new:
+                        capable_channels = expand_capacity(capable_channels, new)
+                        self.preset.acodec.channels = capable_channels
 
             # =================================================================
             # Prepare audio capabilities
             # =================================================================
-            for attribute in ["width", "depth", "rate", "channels"]:
-                current = getattr(self.info, "audio" + attribute)
-                amin, amax = getattr(self.preset.acodec, attribute)
-
-                for acap in self.acaps:
-                    if amin < amax:
-                        acap[attribute] = gst.IntRange(amin, amax)
-                    else:
-                        acap[attribute] = amin
+            a_stream = self.info.get_audio_streams()[0]
+            self.acaps.set_value('channels', a_stream.get_channels())
+            self.acaps.set_value('depth', a_stream.get_depth())
+            self.acaps.set_value('rate', a_stream.get_sample_rate())
 
             # =================================================================
             # Add audio transcoding pipeline to command
@@ -616,9 +567,9 @@ class Transcoder(gobject.GObject):
                        }
 
             amux = premux
-            if container in ["qtmux", "webmmux", "ffmux_dvd", "matroskamux"]:
+            if container in ("qtmux", "webmmux", "avmux_dvd", "matroskamux", "mp4mux"):
                 if premux.startswith("mux"):
-                    amux += "audio_%d"
+                    amux += "audio_%u"
 
             cmd += " dmux. ! queue ! audioconvert ! " \
                    "audiorate tolerance=100000000 ! " \
@@ -634,18 +585,17 @@ class Transcoder(gobject.GObject):
 
     def _build_pipeline(self, cmd):
         """
-            Build a gstreamer pipeline from a given gst-launch style string and
+            Build a Gstreamer pipeline from a given gst-launch style string and
             connect a callback to it to receive messages.
 
             @type cmd: string
             @param cmd: A gst-launch string to construct a pipeline from.
         """
-        _log.debug(cmd.replace("(", "\\(").replace(")", "\\)")\
-                      .replace(";", "\;"))
+        _log.debug(cmd)
 
         try:
-            self.pipe = gst.parse_launch(cmd)
-        except gobject.GError, e:
+            self.pipe = Gst.parse_launch(cmd)
+        except GLib.GError as e:
             raise PipelineException(_("Unable to construct pipeline! ") + \
                                     str(e))
 
@@ -664,8 +614,8 @@ class Transcoder(gobject.GObject):
             @param message: The message that was sent on the bus
         """
         t = message.type
-        if t == gst.MESSAGE_EOS:
-            self.state = gst.STATE_NULL
+        if t == Gst.MessageType.EOS:
+            self.state = Gst.State.NULL
             self.emit("pass-complete")
             if self.enc_pass < self.preset.pass_count - 1:
                 self.enc_pass += 1
@@ -673,6 +623,8 @@ class Transcoder(gobject.GObject):
                 self.start()
             else:
                 self.emit("complete")
+        elif t == Gst.MessageType.ERROR:
+            print(message.parse_error())
 
         self.emit("message", bus, message)
 
@@ -680,7 +632,7 @@ class Transcoder(gobject.GObject):
         """
             Start the pipeline!
         """
-        self.state = gst.STATE_PLAYING
+        self.state = Gst.State.PLAYING
         if reset_timer:
             self.start_time = time.time()
 
@@ -688,32 +640,32 @@ class Transcoder(gobject.GObject):
         """
             Pause the pipeline!
         """
-        self.state = gst.STATE_PAUSED
+        self.state = Gst.State.PAUSED
 
     def stop(self):
         """
             Stop the pipeline!
         """
-        self.state = gst.STATE_NULL
+        self.state = Gst.State.NULL
 
     def get_state(self):
         """
-            Return the gstreamer state of the pipeline.
+            Return the Gstreamer state of the pipeline.
 
             @rtype: int
             @return: The state of the current pipeline.
         """
         if self.pipe:
-            return self.pipe.get_state()[1]
+            return self.pipe.get_state(Gst.SECOND*2)[1]
         else:
             return None
 
     def set_state(self, state):
         """
-            Set the gstreamer state of the pipeline.
+            Set the Gstreamer state of the pipeline.
 
             @type state: int
-            @param state: The state to set, e.g. gst.STATE_PLAYING
+            @param state: The state to set, e.g. Gst.State.PLAYING
         """
         if self.pipe:
             self.pipe.set_state(state)
@@ -728,31 +680,31 @@ class Transcoder(gobject.GObject):
             Examples
 
              - 0.14, "00:15" => 14% complete, 15 seconds remaining
-             - 0.0, "Uknown" => 0% complete, uknown time remaining
+             - 0.0, "Unknown" => 0% complete, unknown time remaining
 
             Raises EncoderStatusException on errors.
 
             @rtype: tuple
             @return: A tuple of percent, time_rem
         """
-        duration = max(self.info.videolength, self.info.audiolength)
+        duration = self.info.get_duration()
 
         if not duration or duration < 0:
             return 0.0, _("Unknown")
 
         try:
-            pos, format = self.pipe.query_position(gst.FORMAT_TIME)
-        except gst.QueryError:
-            raise TranscoderStatusException(_("Can't query position!"))
+            success, pos = self.pipe.query_position(Gst.Format.TIME)
+            if not success:
+                raise TranscoderStatusException(_("Can't query position!"))
         except AttributeError:
             raise TranscoderStatusException(_("No pipeline to query!"))
 
-        percent = pos / float(duration)
+        percent = pos / duration
         if percent <= 0.0:
             return 0.0, _("Unknown")
 
         if self._percent_cached == percent and time.time() - self._percent_cached_time > 5:
-            self.pipe.post_message(gst.message_new_eos(self.pipe))
+            self.pipe.post_message(Gst.Message.new_eos(self.pipe))
 
         if self._percent_cached != percent:
             self._percent_cached = percent
@@ -776,3 +728,17 @@ class Transcoder(gobject.GObject):
 
     status = property(get_status)
 
+    def on_got_info(self, disc, info, error):
+        self.info = info
+        r = GstPbutils.DiscovererInfo.get_result(info)
+        is_media = r == GstPbutils.DiscovererResult.OK
+        self.emit("discovered", info, is_media)
+
+        if is_video(info) or is_audio(info):
+            try:
+                self._setup_pass()
+            except PipelineException as e:
+                self.emit("error", str(e))
+                return
+
+            self.start()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
     Arista Presets
@@ -39,54 +39,33 @@
     <http://www.gnu.org/licenses/>.
 """
 
-try:
-    import json
-except ImportError:
-    import simplejson as json
-
+import os
+import json
 import gettext
 import shutil
 import logging
-import os
 import subprocess
-import sys
 import tarfile
-import urllib2
+import urllib.request
+from collections import OrderedDict
 
-import gobject
-import gst
-import gst.pbutils
+import gi
 
-import utils
+gi.require_version('Gst', '1.0')
+gi.require_version('GstPbutils', '1.0')
+from gi.repository import GObject
+from gi.repository import Gst
+from gi.repository import GstPbutils
+
+from . import utils
+from .utils import Fraction
 
 _ = gettext.gettext
 _presets = {}
 _log = logging.getLogger("arista.presets")
 
-class Fraction(gst.Fraction):
-    """
-        An object for storing a fraction as two integers. This is a subclass
-        of gst.Fraction that allows initialization from a string representation
-        like "1/2".
-    """
-    def __init__(self, value = "1"):
-        """
-            @type value: str
-            @param value: Either a single number or two numbers separated by
-                          a '/' that represent a fraction
-        """
-        parts = str(value).split("/")
 
-        if len(parts) == 1:
-            gst.Fraction.__init__(self, int(value), 1)
-        elif len(parts) == 2:
-            gst.Fraction.__init__(self, int(parts[0]), int(parts[1]))
-        else:
-            raise ValueError(_("Not a valid integer or fraction: %(value)s!") % {
-                "value": value,
-            })
-
-class Author(object):
+class Author:
     """
         An author object that stores a name and an email.
     """
@@ -100,10 +79,14 @@ class Author(object):
         self.name = name
         self.email = email
 
-    def __repr__(self):
-        return (self.name or self.email) and "%s <%s>" % (self.name, self.email) or ""
+    def __str__(self):
+        return (self.name or self.email) and '{} <{}>'.format(self.name, self.email) or ''
 
-class Device(object):
+    def __repr__(self):
+        return '<Author {}>'.format(self)
+
+
+class Device:
     """
         A device holds information about a product and several presets for that
         product. This includes the make, model, version, etc.
@@ -149,7 +132,10 @@ class Device(object):
         self.filename = None
 
     def __repr__(self):
-        return "%s %s" % (self.make, self.model)
+        return '<Device: {} {}>'.format(self.make, self.model)
+
+    def __str__(self):
+        return '{} {}'.format(self.make, self.model)
 
     @property
     def name(self):
@@ -212,11 +198,8 @@ class Device(object):
         for name, preset in self.presets.items():
             rates = []
             for x in preset.acodec.rate[0], preset.acodec.rate[1], preset.vcodec.rate[0], preset.vcodec.rate[1]:
-                if isinstance(x, gst.Fraction):
-                    if x.denom == 1:
-                        rates.append("%s" % x.num)
-                    else:
-                        rates.append("%s/%s" % (x.num, x.denom))
+                if isinstance(x, Fraction):
+                    rates.append(str(x))
                 else:
                     rates.append("%s" % x)
 
@@ -336,7 +319,8 @@ class Device(object):
 
         return device
 
-class Preset(object):
+
+class Preset:
     """
         A preset representing audio and video encoding options for a particular
         device.
@@ -370,7 +354,10 @@ class Preset(object):
         self.icon = icon
 
     def __repr__(self):
-        return "%s %s" % (self.name, self.container)
+        return '<Preset {} {}>'.format(self.name, self.container)
+
+    def __str__(self):
+        return '{} {}'.format(self.name, self.container)
 
     @property
     def pass_count(self):
@@ -424,8 +411,8 @@ class Preset(object):
         missing = []
         missingdesc = ""
         for element in elements:
-            if not gst.element_factory_find(element):
-                missing.append(gst.pbutils.missing_element_installer_detail_new(element))
+            if not Gst.element_factory_find(element):
+                missing.append(GstPbutils.missing_element_installer_detail_new(element))
                 if missingdesc:
                     missingdesc += ", %s" % element
                 else:
@@ -433,27 +420,28 @@ class Preset(object):
 
         if missing:
             _log.info("Attempting to install elements: %s" % missingdesc)
-            if gst.pbutils.install_plugins_supported():
+            if GstPbutils.install_plugins_supported():
                 def install_done(result, null):
-                    if result == gst.pbutils.INSTALL_PLUGINS_INSTALL_IN_PROGRESS:
+                    if result == GstPbutils.INSTALL_PLUGINS_INSTALL_IN_PROGRESS:
                         # Ignore start of installer message
                         pass
-                    elif result == gst.pbutils.INSTALL_PLUGINS_SUCCESS:
+                    elif result == GstPbutils.INSTALL_PLUGINS_SUCCESS:
                         callback(self, True, *args)
                     else:
                         _log.error("Unable to install required elements!")
                         callback(self, False, *args)
 
-                context = gst.pbutils.InstallPluginsContext()
-                gst.pbutils.install_plugins_async(missing, context,
+                context = GstPbutils.InstallPluginsContext()
+                GstPbutils.install_plugins_async(missing, context,
                                                   install_done, "")
             else:
                 _log.error("Installing elements not supported!")
-                gobject.idle_add(callback, self, False, *args)
+                GObject.idle_add(callback, self, False, *args)
         else:
-            gobject.idle_add(callback, self, True, *args)
+            GObject.idle_add(callback, self, True, *args)
 
-class Codec(object):
+
+class Codec:
     """
         Settings for encoding audio or video. This object defines options
         common to both audio and video encoding.
@@ -475,18 +463,26 @@ class Codec(object):
         self.rate = (Fraction(), Fraction())
 
     def __repr__(self):
-        return "%s %s" % (self.name, self.container)
+        return '<Codec {} {}>'.format(self.name, self.container)
+
+    def __str__(self):
+        return '{} {}'.format(self.name, self.container)
+
 
 class AudioCodec(Codec):
     """
         Settings for encoding audio.
     """
     def __init__(self, name=None, container=None, rate=None, passes=None, width=None, depth=None, channels=None):
-        Codec.__init__(self, name=name, container=container, passes=passes)
-        self.rate = rate and rate or (8000, 96000)
-        self.width = width and width or (8, 24)
-        self.depth = depth and depth or (8, 24)
-        self.channels = channels and channels or (1, 6)
+        super().__init__(name=name, container=container, passes=passes)
+        # The value of these attributes can be of type:
+        # range(): when encoder returns data as range
+        # tuple(): when encode returns data as array (list) or single
+        self.rate = rate and rate or (8000, 96000)   # Sample rate
+        self.width = width and width or (8, 24)   # Not exist in GStreamer 1.0
+        self.depth = depth and depth or (8, 24)   # Not mentioned in encoder in GStreamer 1.0
+        self.channels = channels and channels or range(1, 6)
+
 
 class VideoCodec(Codec):
     """
@@ -494,10 +490,11 @@ class VideoCodec(Codec):
     """
     def __init__(self, name=None, container=None, rate=None, passes=None, width=None, height=None, transform=None):
         Codec.__init__(self, name=name, container=container, passes=passes)
-        self.rate = rate and rate or (Fraction("1"), Fraction("60"))
+        self.rate = rate and rate or (Fraction(1), Fraction(60))
         self.width = width and width or (2, 1920)
         self.height = height and height or (2, 1080)
         self.transform = transform
+
 
 def load(filename):
     """
@@ -519,6 +516,7 @@ def load(filename):
 
     return device
 
+
 def load_directory(directory):
     """
         Load an entire directory of device presets.
@@ -528,14 +526,14 @@ def load_directory(directory):
         @rtype: dict
         @return: A dictionary of all the loaded devices
     """
-    global _presets
     for filename in os.listdir(directory):
         if filename.endswith("json"):
             try:
                 _presets[filename[:-5]] = load(os.path.join(directory, filename))
-            except Exception, e:
+            except OSError as e:
                 _log.warning("Problem loading %s! %s" % (filename, str(e)))
     return _presets
+
 
 def get():
     """
@@ -546,6 +544,7 @@ def get():
                  name for the device
     """
     return _presets
+
 
 def version_info():
     """
@@ -584,6 +583,7 @@ def extract(stream):
 
     return [x[:-5] for x in tar.getnames() if x.endswith(".json")]
 
+
 def fetch(location, name):
     """
         Attempt to fetch and install a preset. Presets are always installed
@@ -607,9 +607,9 @@ def fetch(location, name):
     updated = []
 
     try:
-        f = urllib2.urlopen(path)
+        f = urllib.request.urlopen(path)
         updated += extract(f)
-    except Exception, e:
+    except OSError as e:
         _log.warning(_("There was an error fetching and installing " \
                        "%(location)s: %(error)s") % {
             "location": path,
@@ -617,6 +617,7 @@ def fetch(location, name):
         })
 
     return updated
+
 
 def reset(overwrite=False, ignore_initial=False):
     # Automatically load presets
@@ -649,5 +650,34 @@ def reset(overwrite=False, ignore_initial=False):
 
     load_directory(load_path)
 
-reset()
 
+def parse_pass(pas):
+    pairs = pas.split()
+    d = OrderedDict()
+    for p in pairs:
+        k, v = p.split('=', 1)
+        d[k] = v
+    return d
+
+
+def make_pass_from_dict(d):
+    out = []
+    for k, v in d.items():
+        out.append('{}={}'.format(k, v))
+    return ' '.join(out)
+
+
+def remove_param_from_passes(passes, key):
+    '''
+    Remove key=value from codec passess
+    '''
+    out = []
+    for pas in passes:
+        d = parse_pass(pas)
+        if key in d:
+            del d[key]
+        out.append(make_pass_from_dict(d))
+    return out
+
+
+reset()

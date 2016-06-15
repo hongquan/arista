@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
     Arista Queue Handling
@@ -32,15 +32,19 @@ import logging
 import threading
 import time
 
-import gobject
-import gst
+import gi
+
+gi.require_version('Gst', '1.0')
+from gi.repository import GObject
+from gi.repository import Gst
 
 from .transcoder import Transcoder
 
 _ = gettext.gettext
 _log = logging.getLogger("arista.queue")
 
-class QueueEntry(object):
+
+class QueueEntry:
     """
         An entry in the queue.
     """
@@ -66,35 +70,36 @@ class QueueEntry(object):
             Stop this queue entry from processing.
         """
         if hasattr(self, "transcoder") and self.transcoder.pipe:
-            self.transcoder.pipe.send_event(gst.event_new_eos())
+            self.transcoder.pipe.send_event(Gst.event_new_eos())
             self.transcoder.start()
 
             self.force_stopped = True
 
-class TranscodeQueue(gobject.GObject):
+
+class TranscodeQueue(GObject.GObject):
     """
         A generic queue for transcoding. This object acts as a list of
         QueueEntry items with a couple convenience methods. A timeout in the
-        gobject main loop continuously checks for new entries and starts
+        GObject main loop continuously checks for new entries and starts
         them as needed.
     """
 
     __gsignals__ = {
-        "entry-added": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                       (gobject.TYPE_PYOBJECT,)),      # QueueEntry
-        "entry-discovered": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                            (gobject.TYPE_PYOBJECT,    # QueueEntry
-                             gobject.TYPE_PYOBJECT,    # info
-                             gobject.TYPE_PYOBJECT)),  # is_media
-        "entry-pass-setup": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                            (gobject.TYPE_PYOBJECT,)), # QueueEntry
-        "entry-start": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                       (gobject.TYPE_PYOBJECT,)),      # QueueEntry
-        "entry-error": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                       (gobject.TYPE_PYOBJECT,         # QueueEntry
-                        gobject.TYPE_PYOBJECT,)),      # errorstr
-        "entry-complete": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                          (gobject.TYPE_PYOBJECT,)),   # QueueEntry
+        "entry-added": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                       (GObject.TYPE_PYOBJECT,)),      # QueueEntry
+        "entry-discovered": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                            (GObject.TYPE_PYOBJECT,    # QueueEntry
+                             GObject.TYPE_PYOBJECT,    # info
+                             GObject.TYPE_PYOBJECT)),  # is_media
+        "entry-pass-setup": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                            (GObject.TYPE_PYOBJECT,)), # QueueEntry
+        "entry-start": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                       (GObject.TYPE_PYOBJECT,)),      # QueueEntry
+        "entry-error": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                       (GObject.TYPE_PYOBJECT,         # QueueEntry
+                        GObject.TYPE_PYOBJECT,)),      # errorstr
+        "entry-complete": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                          (GObject.TYPE_PYOBJECT,)),   # QueueEntry
     }
 
     def __init__(self, check_interval = 500):
@@ -105,12 +110,12 @@ class TranscodeQueue(gobject.GObject):
             @param check_interval: The interval in milliseconds between
                                    checking for new queue items
         """
-        self.__gobject_init__()
+        super().__init__()
         self._queue = []
         self.running = True
         self.pipe_running = False
         self.enc_pass = 0
-        gobject.timeout_add(check_interval, self._check_queue)
+        GObject.timeout_add(check_interval, self._check_queue)
 
     def __getitem__(self, index):
         """
@@ -171,7 +176,7 @@ class TranscodeQueue(gobject.GObject):
 
     def _check_queue(self):
         """
-            This method is invoked periodically by the gobject mainloop.
+            This method is invoked periodically by the GObject mainloop.
             It watches the queue and when items are added it will call
             the callback and watch over the pipe until it completes, then loop
             for each item so that each encode is executed after the previous
@@ -217,4 +222,3 @@ class TranscodeQueue(gobject.GObject):
         self.emit("entry-complete", self._queue[0])
         self._queue.pop(0)
         self.pipe_running = False
-

@@ -24,24 +24,26 @@
     <http://www.gnu.org/licenses/>.
 """
 
-import gobject
 import subprocess
+import gi
 
-class DvdInfo(gobject.GObject):
+from gi.repository import GObject
+
+class DvdInfo(GObject.GObject):
     """
         Get info about a DVD using an external process running lsdvd. Emits
         a GObject signal when ready with the DVD info.
     """
     __gsignals__ = {
-        "ready": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,  (gobject.TYPE_PYOBJECT,)),
+        "ready": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,  (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self, path):
-        gobject.GObject.__init__(self)
+        GObject.GObject.__init__(self)
         self.path = path
         self.proc = subprocess.Popen('lsdvd -x -Oy %s' % path, stdout=subprocess.PIPE, shell=True)
 
-        gobject.timeout_add(100, self.run)
+        GObject.timeout_add(100, self.run)
 
     def run(self):
         # Check if we have the info, if not, return and we will be called
@@ -56,5 +58,5 @@ class DvdInfo(gobject.GObject):
 
         return True
 
-gobject.type_register(DvdInfo)
+GObject.type_register(DvdInfo)
 

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
 """
@@ -34,22 +34,25 @@ import logging
 import os
 import signal
 import sys
-import time
 
+from datetime import timedelta
 from optparse import OptionParser
 
-import gobject
+import gi
 
-# FIXME: Stupid hack, see the other fixme comment below!
-if __name__ != "__main__":
-    import gst
+gi.require_version('Gst', '1.0')
+from gi.repository import GObject
+from gi.repository import GLib
+from gi.repository import Gst
 
 import arista
+from arista.discoverer import get_tags_dict, get_mimetype, \
+    is_video, is_audio
 
 _ = gettext.gettext
 
-# Initialize threads for gstreamer
-gobject.threads_init()
+# Initialize threads for Gstreamer
+GObject.threads_init()
 
 status_time = None
 status_msg = ""
@@ -57,22 +60,22 @@ transcoder = None
 loop = None
 interrupted = False
 
+
 def print_status(enc, options):
     """
         Print the current status to the terminal with the estimated time
         remaining.
     """
     global status_msg
-    global interrupted
     percent = 0.0
 
     if interrupted or not enc:
         return True
 
-    if enc.state == gst.STATE_NULL and interrupted:
-        gobject.idle_add(loop.quit)
+    if enc.state == Gst.State.NULL and interrupted:
+        GLib.idle_add(loop.quit)
         return False
-    elif enc.state != gst.STATE_PLAYING:
+    elif enc.state != Gst.State.PLAYING:
         return True
 
     try:
@@ -87,20 +90,65 @@ def print_status(enc, options):
             sys.stdout.write(msg)
             sys.stdout.flush()
             status_msg = msg
-    except arista.transcoder.TranscoderStatusException, e:
-        print str(e)
+    except arista.transcoder.TranscoderStatusException as e:
+        print(e)
 
     return (percent < 100)
 
+
+def print_info(info):
+    print(_('MIME type:\t{}').format(get_mimetype(info)))
+    l = info.get_duration()
+    print(_('Length:\t{}').format(timedelta(microseconds=l/1000)))
+    try:
+        a = info.get_audio_streams()[0]
+        print(_('Audio:'))
+        br = a.get_bitrate()/1000
+        tags = get_tags_dict(a)
+        print(_('\tCodec:\t\t{}').format(tags['audio-codec']))
+        print(_('\tChannel:\t{}').format(a.get_channels()))
+        print(_('\tSample rate:\t{} Hz').format(a.get_sample_rate()))
+        print(_('\tDepth:\t\t{} bits').format(a.get_depth()))
+        print(_('\tBitrate:\t{} Kb/s').format(br))
+        print(_('\tLanguage:\t{}').format(a.get_language() or ''))
+    except IndexError:
+        pass
+    try:
+        v = info.get_video_streams()[0]
+        print(_('Video:'))
+        tags = get_tags_dict(v)
+        struct = v.get_caps().get_structure(0)
+        print(_('\tDimension:\t{}x{}').format(v.get_width(), v.get_height()))
+        print(_('\tAspect ratio:\t{}x{}').format(v.get_par_num(),
+                                                 v.get_par_denom()))
+        print(_('\tLanguage:\t{}').format(tags.get('language-code', '')))
+        print(_('\tCodec:\t\t{}').format(tags['video-codec']))
+        print(_('\tProfile:\t{}').format(struct.get_value('profile') or ''))
+        print(_('\tFramerate:\t{}/{}').format(v.get_framerate_num(),
+                                              v.get_framerate_denom()))
+        print(_('\tDepth:\t\t{} bits').format(v.get_depth()))
+        print(_('\tBitrate:\t{} Kb/s').format(v.get_bitrate()/1000))
+    except IndexError:
+        pass
+    # Container
+    tags = get_tags_dict(info)
+    print(_('Container:'))
+    try:
+        print(_('\tFormat:\t{}').format(tags['container-format']))
+    except KeyError:
+        pass
+
+
 def entry_start(queue, entry, options):
     if not options.quiet:
-        print _("Encoding %(filename)s for %(device)s (%(preset)s)") % {
+        print(_("Encoding %(filename)s for %(device)s (%(preset)s)") % {
             "filename": os.path.basename(entry.options.uri),
             "device": options.device,
             "preset": options.preset or _("default"),
-        }
+        })
 
-    gobject.timeout_add(500, print_status, entry.transcoder, options)
+    GLib.timeout_add(500, print_status, entry.transcoder, options)
+
 
 def entry_pass_setup(queue, entry, options):
     if not options.quiet:
@@ -109,12 +157,13 @@ def entry_pass_setup(queue, entry, options):
 
         info = entry.transcoder.info
         preset = entry.transcoder.preset
-        if (info.is_video and len(preset.vcodec.passes) > 1) or \
-                             (info.is_audio and len(preset.vcodec.passes) > 1):
-            print _("Starting pass %(pass)d of %(total)d") % {
+        if (is_video(info) and len(preset.vcodec.passes) > 1) or \
+                             (is_audio(info) and len(preset.vcodec.passes) > 1):
+            print(_("Starting pass %(pass)d of %(total)d") % {
                 "pass": entry.transcoder.enc_pass + 1,
                 "total": entry.transcoder.preset.pass_count,
-            }
+            })
+
 
 def entry_complete(queue, entry, options):
     if not options.quiet:
@@ -124,22 +173,22 @@ def entry_complete(queue, entry, options):
 
     if len(queue) == 1:
         # We are the last item!
-        gobject.idle_add(loop.quit)
+        GLib.idle_add(loop.quit)
 
 def entry_error(queue, entry, errorstr, options):
     if not options.quiet:
-        print _("Encoding %(filename)s for %(device)s (%(preset)s) failed!") % {
+        print(_("Encoding %(filename)s for %(device)s (%(preset)s) failed!") % {
                 "filename": os.path.basename(entry.options.uri),
                 "device": options.device,
                 "preset": options.preset or _("default"),
-            }
-        print errorstr
+            })
+        print(errorstr)
 
     entry.transcoder.stop()
 
     if len(queue) == 1:
         # We are the last item!
-        gobject.idle_add(loop.quit)
+        GLib.idle_add(loop.quit)
 
 def check_interrupted():
     """
@@ -149,10 +198,10 @@ def check_interrupted():
     if interrupted:
         try:
             source = transcoder.pipe.get_by_name("source")
-            source.send_event(gst.event_new_eos())
+            source.send_event(Gst.event_new_eos())
         except:
             # Something pretty bad happened... just exit!
-            gobject.idle_add(loop.quit)
+            GLib.idle_add(loop.quit)
 
         return False
     return True
@@ -162,8 +211,8 @@ def signal_handler(signum, frame):
         Handle Ctr-C gracefully and shut down the transcoder.
     """
     global interrupted
-    print
-    print _("Interrupt caught. Cleaning up... (Ctrl-C to force exit)")
+    print()
+    print(_("Interrupt caught. Cleaning up... (Ctrl-C to force exit)"))
     interrupted = True
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
@@ -214,12 +263,6 @@ if __name__ == "__main__":
                         or logging.INFO, format = "%(name)s [%(lineno)d]: " \
                         "%(levelname)s %(message)s")
 
-    # FIXME: OMGWTFBBQ gstreamer hijacks sys.argv unless we import AFTER we use
-    # the optionparser stuff above...
-    # This seems to be fixed http://bugzilla.gnome.org/show_bug.cgi?id=425847
-    # but in my testing it is NOT. Leaving hacks for now.
-    import gst
-
     arista.init()
 
     from arista.transcoder import TranscoderOptions
@@ -244,33 +287,33 @@ if __name__ == "__main__":
     devices = arista.presets.get()
 
     if options.info and not args:
-        print _("Available devices:")
-        print
+        print(_("Available devices:"))
+        print()
 
         longest = 0
         for name in devices:
             longest = max(longest, len(name))
 
         for name in sorted(devices.keys()):
-            print _("%(name)s: %(description)s") % {
+            print(_("%(name)s: %(description)s") % {
                 "name": name.rjust(longest + 1),
                 "description": devices[name].description,
-            }
+            })
             for preset in devices[name].presets.values():
                default = devices[name].default == preset.name
-               print _("%(spacing)s- %(name)s%(description)s") % {
+               print(_("%(spacing)s- %(name)s%(description)s") % {
                   "spacing": " " * (longest + 3),
                   "name": default and preset.name + "*" or preset.name,
                   "description": (preset.description != devices[name].description) and ": " + preset.description or "",
-               }
-        print
-        print _("Use --info device_name preset_name for more information on a preset.")
+               })
+        print()
+        print(_("Use --info device_name preset_name for more information on a preset."))
         raise SystemExit()
     elif options.info:
         try:
            device = devices[args[0]]
         except KeyError:
-            print _("Device not found!")
+            print(_("Device not found!"))
             raise SystemExit(1)
 
         preset = None
@@ -280,21 +323,21 @@ if __name__ == "__main__":
                     preset = device.presets[p]
                     break
             else:
-                print _("Preset not found!")
+                print(_("Preset not found!"))
                 raise SystemExit(1)
 
         if preset:
-            print _("Preset info:")
+            print(_("Preset info:"))
         else:
-            print _("Device info:")
-        print
+            print(_("Device info:"))
+        print()
 
         info = [
             (_("ID:"), args[0]),
             (_("Make:"), device.make),
             (_("Model:"), device.model),
             (_("Description:"), preset and preset.description or device.description),
-            (_("Author:"), preset and unicode(preset.author) or unicode(device.author)),
+            (_("Author:"), preset and str(preset.author) or str(device.author)),
             (_("Version:"), preset and preset.version or device.version),
         ]
 
@@ -327,36 +370,35 @@ if __name__ == "__main__":
             longest = max(longest, len(attr))
 
         for (attr, value) in info:
-            print "%(attr)s %(value)s" % {
-                "attr": attr.rjust(longest + 1),
-                "value": value.encode("utf-8"),
-            }
-        print
+            print("{attr} {value}".format(attr=attr.rjust(longest + 1),
+                                          value=value.encode("utf-8")))
+        print()
         raise SystemExit()
     elif options.source_info:
         if len(args) != 1:
-            print _("You may only pass one filename for --source-info!")
+            print(_("You may only pass one filename for --source-info!"))
             parser.print_help()
             raise SystemExit(1)
 
-        def _got_info(info, is_media):
-            discoverer.print_info()
+        def _got_info(disc, info, error):
+            print_info(info)
             loop.quit()
 
-        discoverer = arista.discoverer.Discoverer(args[0])
+        discoverer = arista.discoverer.Discoverer.new(Gst.SECOND*5)
         discoverer.connect("discovered", _got_info)
-        discoverer.discover()
+        discoverer.start()
 
-        print _("Discovering file info...")
+        print(_("Discovering file info..."))
+        discoverer.discover_uri_async(Gst.filename_to_uri(args[0]))
 
-        loop = gobject.MainLoop()
+        loop = GLib.MainLoop()
         loop.run()
     elif options.install:
         for arg in args:
             arista.presets.extract(open(arg))
     elif options.reset:
         arista.presets.reset(overwrite=True, ignore_initial=True)
-        print _("Reset complete")
+        print(_("Reset complete"))
     else:
         if len(args) < 1:
             parser.print_help()
@@ -374,7 +416,7 @@ if __name__ == "__main__":
         if options.crop:
             for c in options.crop:
                 if c < 0:
-                    print _("All parameters to --crop/-c must be non negative integers. %i is negative, aborting.") % c
+                    print(_("All parameters to --crop/-c must be non negative integers. %i is negative, aborting.") % c)
                     raise SystemExit()
 
         outputs = []
@@ -388,7 +430,8 @@ if __name__ == "__main__":
 
             outputs.append(output)
 
-            opts = TranscoderOptions(arg, preset, output,
+            uri = Gst.filename_to_uri(arg)
+            opts = TranscoderOptions(uri, preset, output,
                                      ssa=options.ssa,
                                      subfile = options.subtitle,
                                      subfile_charset = options.subtitle_encoding,
@@ -403,13 +446,11 @@ if __name__ == "__main__":
         queue.connect("entry-complete", entry_complete, options)
 
         if len(queue) > 1:
-            print _("Processing %(job_count)d jobs...") % {
-                "job_count": len(queue),
-            }
+            print(_("Processing %(job_count)d jobs...") %
+                  {"job_count": len(queue)})
 
         signal.signal(signal.SIGINT, signal_handler)
-        gobject.timeout_add(50, check_interrupted)
+        GLib.timeout_add(50, check_interrupted)
 
-        loop = gobject.MainLoop()
+        loop = GLib.MainLoop()
         loop.run()
-

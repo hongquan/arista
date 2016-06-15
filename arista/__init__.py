@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
     Arista Transcoder Library
@@ -37,6 +37,10 @@
 
 import gettext
 
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
+
 _ = gettext.gettext
 
 def init():
@@ -44,14 +48,16 @@ def init():
         Initialize the arista module. You MUST call this method after
         importing.
     """
-    import discoverer
-    import dvd
-    import inputs
-    import presets
-    import queue
-    import transcoder
-    import utils
+    from . import discoverer
+    from . import dvd
+    from . import inputs
+    from . import presets
+    from . import queue
+    from . import transcoder
+    from . import utils
+
+    # Ref: https://bugzilla.gnome.org/show_bug.cgi?id=655084#c1
+    Gst.init()
 
 __version__ = _("0.9.8")
 __author__ = _("Daniel G. Taylor <dan@programmer-art.org>")
-

@@ -1,197 +1,197 @@
 {
-    "make": "Generic", 
-    "model": "Computer", 
-    "description": "WebM, H.264/AAC and Theora/Vorbis for the computer", 
+    "make": "Generic",
+    "model": "Computer",
+    "description": "WebM, H.264/AAC and Theora/Vorbis for the computer",
     "author": {
-        "name": "Daniel G. Taylor", 
+        "name": "Daniel G. Taylor",
         "email": "dan@programmer-art.org"
-    }, 
-    "version": "1.9", 
-    "icon": "file://computer.svg", 
-    "default": "WebM", 
+    },
+    "version": "1.9",
+    "icon": "file://computer.svg",
+    "default": "WebM",
     "presets": [
         {
-            "name": "Live Input H.264", 
+            "name": "Live Input H.264",
             "description": "Constant bitrate fast H.264 / AAC in MP4",
-            "container": "mp4mux", 
-            "extension": "mp4", 
-            "icon": "file://computer-live.svg", 
+            "container": "mp4mux",
+            "extension": "mp4",
+            "icon": "file://computer-live.svg",
             "vcodec": {
                 "passes": [
                     "pass=cbr bitrate=2048 subme=4 threads=0"
-                ], 
-                "container": "mp4mux", 
-                "name": "x264enc", 
+                ],
+                "container": "mp4mux",
+                "name": "x264enc",
                 "height": [
-                    240, 
+                    240,
                     1080
-                ], 
+                ],
                 "width": [
-                    320, 
+                    320,
                     1920
-                ], 
+                ],
                 "rate": [
                     1,
                     30
                 ]
-            }, 
+            },
             "acodec": {
                 "passes": [
                     "bitrate=192000"
-                ], 
-                "container": "mp4mux", 
-                "name": "faac", 
+                ],
+                "container": "mp4mux",
+                "name": "faac",
                 "depth": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "channels": [
-                    1, 
+                    1,
                     6
-                ], 
+                ],
                 "width": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "rate": [
-                    8000, 
+                    8000,
                     96000
                 ]
             }
-        }, 
+        },
         {
-            "name": "H.264", 
+            "name": "H.264",
             "description": "H.264/AAC in MP4 for the computer",
-            "container": "mp4mux", 
-            "extension": "mp4", 
+            "container": "mp4mux",
+            "extension": "mp4",
             "vcodec": {
                 "passes": [
                     "pass=qual quantizer=21 me=umh subme=6 ref=3 threads=0"
-                ], 
-                "container": "mp4mux", 
-                "name": "x264enc", 
+                ],
+                "container": "mp4mux",
+                "name": "x264enc",
                 "height": [
-                    240, 
+                    240,
                     1080
-                ], 
+                ],
                 "width": [
-                    320, 
+                    320,
                     1920
-                ], 
+                ],
                 "rate": [
-                    1, 
+                    1,
                     30
                 ]
-            }, 
+            },
             "acodec": {
                 "passes": [
                     "bitrate=192000"
-                ], 
-                "container": "mp4mux", 
-                "name": "faac", 
+                ],
+                "container": "mp4mux",
+                "name": "faac",
                 "depth": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "channels": [
-                    1, 
+                    1,
                     6
-                ], 
+                ],
                 "width": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "rate": [
-                    8000, 
+                    8000,
                     96000
                 ]
             }
-        }, 
+        },
         {
             "vcodec": {
                 "passes": [
                     "border=0 quality=40 keyframe-freq=30"
-                ], 
-                "container": "matroskamux", 
-                "name": "theoraenc", 
+                ],
+                "container": "matroskamux",
+                "name": "theoraenc",
                 "height": [
-                    240, 
+                    240,
                     1080
-                ], 
+                ],
                 "width": [
-                    320, 
+                    320,
                     1920
-                ], 
+                ],
                 "rate": [
                     1,
                     30
                 ]
-            }, 
-            "container": "matroskamux", 
-            "name": "Theora", 
+            },
+            "container": "matroskamux",
+            "name": "Theora",
             "description": "Theora/Vorbis in Ogg for the computer",
-            "extension": "mkv", 
+            "extension": "mkv",
             "acodec": {
                 "passes": [
                     "quality=0.5"
-                ], 
-                "container": "matroskamux", 
-                "name": "vorbisenc", 
+                ],
+                "container": "matroskamux",
+                "name": "vorbisenc",
                 "depth": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "channels": [
-                    1, 
+                    1,
                     2
-                ], 
+                ],
                 "width": [
-                    8, 
+                    8,
                     32
-                ], 
+                ],
                 "rate": [
-                    8000, 
+                    8000,
                     96000
                 ]
             }
-        }, 
+        },
         {
-            "name": "WebM", 
+            "name": "WebM",
             "description": "WebM for the computer",
-            "extension": "webm", 
-            "container": "webmmux", 
-            "icon": "file://computer-webm.svg", 
+            "extension": "webm",
+            "container": "webmmux",
+            "icon": "file://computer-webm.svg",
             "vcodec": {
-                "name": "vp8enc", 
-                "container": "webmmux", 
+                "name": "vp8enc",
+                "container": "webmmux",
                 "width": [
                     120, 1920
-                ], 
+                ],
                 "height": [
                     120, 1080
-                ], 
+                ],
                 "rate": [
                     1, 60
-                ], 
+                ],
                 "passes": [
-                    "quality=6 threads=%(threads)s speed=2"
+                    "threads=%(threads)s"
                 ]
-            }, 
+            },
             "acodec": {
-                "name": "vorbisenc", 
-                "container": "webmmux", 
+                "name": "vorbisenc",
+                "container": "webmmux",
                 "width": [
                     8, 32
-                ], 
+                ],
                 "depth": [
                     8, 24
-                ], 
+                ],
                 "rate": [
                     8000, 96000
-                ], 
+                ],
                 "channels": [
                     1, 2
-                ], 
+                ],
                 "passes": [
                     "quality=0.4"
                 ]

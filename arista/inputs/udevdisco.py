@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
     Arista Input Device Discovery
@@ -7,17 +7,17 @@
     emit signals when disks that contain video are inserted or webcames / tuner
     cards are plugged in using udev.
 
-    http://github.com/nzjrs/python-gudev/blob/master/test.py
-    http://www.kernel.org/pub/linux/utils/kernel/hotplug/gudev/GUdevDevice.html
-    
+    http://github.com/nzjrs/python-GUdev/blob/master/test.py
+    http://www.kernel.org/pub/linux/utils/kernel/hotplug/GUdev/GUdevDevice.html
+
     License
     -------
     Copyright 2008 - 2011 Daniel G. Taylor <dan@programmer-art.org>
-    
+
     This file is part of Arista.
 
     Arista is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as 
+    it under the terms of the GNU Lesser General Public License as
     published by the Free Software Foundation, either version 2.1 of
     the License, or (at your option) any later version.
 
@@ -29,12 +29,19 @@
     You should have received a copy of the GNU Lesser General Public
     License along with Arista.  If not, see
     <http://www.gnu.org/licenses/>.
+
+    2016 Nguyễn Hồng Quân <ng.hong.quan@gmail.com>
+    - Ported to Python 3 (reference Transmageddon).
 """
 
 import gettext
 
-import gobject
-import gudev
+import gi
+
+gi.require_version('GUdev', '1.0')
+from gi.repository import GLib
+from gi.repository import GObject
+from gi.repository import GUdev
 
 _ = gettext.gettext
 
@@ -45,8 +52,8 @@ class InputSource(object):
     def __init__(self, device):
         """
             Create a new input device.
-            
-            @type device: gudev.Device
+
+            @type device: GUdev.Device
             @param device: The device that we are using as an input source
         """
         self.device = device
@@ -55,21 +62,22 @@ class InputSource(object):
     def nice_label(self):
         """
             Get a nice label for this device.
-            
+
             @rtype: str
             @return: The label, in this case the product name
         """
         return self.path
-    
+
     @property
     def path(self):
         """
             Get the device block in the filesystem for this device.
-            
+
             @rtype: string
             @return: The device block, such as "/dev/cdrom".
         """
         return self.device.get_device_file()
+
 
 class DVDDevice(InputSource):
     """
@@ -79,7 +87,7 @@ class DVDDevice(InputSource):
     def media(self):
         """
             Check whether media is in the device.
-            
+
             @rtype: bool
             @return: True if media is present in the device.
         """
@@ -92,6 +100,7 @@ class DVDDevice(InputSource):
             return " ".join([word.capitalize() for word in label.split("_")])
         else:
             return self.device.get_property("ID_MODEL")
+
 
 class V4LDevice(InputSource):
     """
@@ -112,40 +121,41 @@ class V4LDevice(InputSource):
             # Default to version 2
             return "2"
 
-class InputFinder(gobject.GObject):
+
+class InputFinder(GObject.GObject):
     """
-        An object that will find and monitor DVD-capable devices on your 
+        An object that will find and monitor DVD-capable devices on your
         machine and emit signals when video disks are inserted / removed.
-        
+
         Signals:
-        
+
          - disc-found(InputFinder, DVDDevice, label)
          - disc-lost(InputFinder, DVDDevice, label)
          - v4l-capture-found(InputFinder, V4LDevice)
          - v4l-capture-lost(InputFinder, V4LDevice)
     """
-    
+
     __gsignals__ = {
-        "disc-found": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, 
-                       (gobject.TYPE_PYOBJECT, gobject.TYPE_PYOBJECT)),
-        "disc-lost": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, 
-                      (gobject.TYPE_PYOBJECT, gobject.TYPE_PYOBJECT)),
-        "v4l-capture-found": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                              (gobject.TYPE_PYOBJECT,)),
-        "v4l-capture-lost": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                             (gobject.TYPE_PYOBJECT,)),
-        
+        "disc-found": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                       (GObject.TYPE_PYOBJECT, GObject.TYPE_PYOBJECT)),
+        "disc-lost": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                      (GObject.TYPE_PYOBJECT, GObject.TYPE_PYOBJECT)),
+        "v4l-capture-found": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                              (GObject.TYPE_PYOBJECT,)),
+        "v4l-capture-lost": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+                             (GObject.TYPE_PYOBJECT,)),
+
     }
-    
+
     def __init__(self):
         """
             Create a new DVDFinder and attach to the udev system to listen for
             events.
         """
-        self.__gobject_init__()
+        super().__init__()
 
-        self.client = gudev.Client(["video4linux", "block"])
-        
+        self.client = GUdev.Client(subsystems=["video4linux", "block"])
+
         self.drives = {}
         self.capture_devices = {}
 
@@ -169,12 +179,11 @@ class InputFinder(gobject.GObject):
             "change": self.device_changed,
             "remove": self.device_removed,
         }.get(action, lambda x,y: None)(device, device.get_subsystem())
-    
+
     def device_added(self, device, subsystem):
         """
             Called when a device has been added to the system.
         """
-        print device, subsystem
         if subsystem == "video4linux":
             block = device.get_device_file()
             self.capture_devices[block] = V4LDevice(device)
@@ -188,6 +197,8 @@ class InputFinder(gobject.GObject):
         """
         if subsystem == "block" and device.has_property("ID_CDROM"):
             block = device.get_device_file()
+            if block not in self.drives:
+                self.drives[block] = DVDDevice(device)
             dvd_device = self.drives[block]
             media_changed = dvd_device.media != device.has_property("ID_FS_TYPE")
             dvd_device.device = device
@@ -196,37 +207,35 @@ class InputFinder(gobject.GObject):
                     self.emit("disc-found", dvd_device, dvd_device.nice_label)
                 else:
                     self.emit("disc-lost", dvd_device, dvd_device.nice_label)
-    
+
     def device_removed(self, device, subsystem):
         """
             Called when a device has been removed from the system.
         """
         pass
 
-gobject.type_register(InputFinder)
+GObject.type_register(InputFinder)
 
 if __name__ == "__main__":
     # Run a test to print out DVD-capable devices and whether or not they
     # have video disks in them at the moment.
-    import gobject
-    gobject.threads_init()
-    
+    GLib.threads_init()
+
     def found(finder, device, label):
-        print device.path + ": " + label
-    
+        print("{}: {}".format(device.path, label))
+
     def lost(finder, device, label):
-        print device.path + ": " + _("Not mounted.")
-    
+        print(_("%s: Not mounted") % (device.path))
+
     finder = InputFinder()
     finder.connect("disc-found", found)
     finder.connect("disc-lost", lost)
-    
-    for device, drive in finder.drives.items():
-        print drive.nice_label + ": " + device
-    
-    for device, capture in finder.capture_devices.items():
-        print capture.nice_label + " V4Lv" + str(capture.version) + ": " + device
-    
-    loop = gobject.MainLoop()
-    loop.run()
 
+    for device, drive in finder.drives.items():
+        print("{}: {}".format(drive.nice_label, device))
+
+    for device, capture in finder.capture_devices.items():
+        print("{} V4Lv {}: {}".format(capture.nice_label, capture.version, device))
+
+    loop = GLib.MainLoop()
+    loop.run()

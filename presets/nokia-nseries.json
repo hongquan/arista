@@ -1,102 +1,55 @@
 {
-    "version": "1.2", 
-    "description": "Presets for Nokia N Series devices", 
+    "version": "1.2",
+    "description": "Presets for Nokia N Series devices",
     "author": {
-        "name": "Daniel G. Taylor", 
+        "name": "Daniel G. Taylor",
         "email": "dan@programmer-art.org"
-    }, 
-    "default": "N900 H.264", 
-    "make": "Nokia", 
+    },
+    "default": "N900 H.264",
+    "make": "Nokia",
     "presets": [
         {
             "vcodec": {
                 "passes": [
-                    "pass=1 bitrate=300000 ! video/x-xvid, format=(fourcc)DIVX", 
+                    "pass=1 bitrate=300000 ! video/x-xvid, format=(fourcc)DIVX",
                     "pass=2 bitrate=300000 ! video/x-xvid, format=(fourcc)DIVX"
-                ], 
-                "container": "avimux", 
-                "name": "xvidenc", 
+                ],
+                "container": "avimux",
+                "name": "xvidenc",
                 "height": [
-                    208, 
+                    208,
                     208
-                ], 
+                ],
                 "width": [
-                    352, 
+                    352,
                     352
-                ], 
+                ],
                 "rate": [
                     15,
                     24
                 ]
-            }, 
-            "container": "avimux", 
-            "name": "N770", 
-            "extension": "avi", 
+            },
+            "container": "avimux",
+            "name": "N770",
+            "extension": "avi",
             "acodec": {
                 "passes": [
                     "bitrate=96"
-                ], 
-                "container": "avimux", 
-                "name": "lame", 
+                ],
+                "container": "avimux",
+                "name": "lame",
                 "depth": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "channels": [
-                    1, 
+                    1,
                     2
-                ], 
+                ],
                 "width": [
-                    8, 
+                    8,
                     24
-                ], 
-                "rate": [
-                    8000,
-                    96000
-                ]
-            }
-        }, 
-        {
-            "vcodec": {
-                "passes": [
-                    "bitrate=400 me=umh subme=6 cabac=0 threads=0"
-                ], 
-                "container": "qtmux", 
-                "name": "x264enc", 
-                "height": [
-                    224, 
-                    224
-                ], 
-                "width": [
-                    400, 
-                    400
-                ], 
-                "rate": [
-                    15,
-                    24
-                ]
-            }, 
-            "container": "qtmux", 
-            "name": "N800 / N810", 
-            "extension": "m4v", 
-            "acodec": {
-                "passes": [
-                    "bitrate=96000 profile=LC"
-                ], 
-                "container": "qtmux", 
-                "name": "faac", 
-                "depth": [
-                    8, 
-                    24
-                ], 
-                "channels": [
-                    1, 
-                    2
-                ], 
-                "width": [
-                    8, 
-                    24
-                ], 
+                ],
                 "rate": [
                     8000,
                     96000
@@ -106,42 +59,89 @@
         {
             "vcodec": {
                 "passes": [
-                    "pass=qual quantizer=23  me=umh subme=6 cabac=0 threads=0 profile=baseline"
-                ], 
-                "container": "qtmux", 
-                "name": "x264enc", 
+                    "bitrate=400 me=umh subme=6 cabac=0 threads=0"
+                ],
+                "container": "qtmux",
+                "name": "x264enc",
+                "height": [
+                    224,
+                    224
+                ],
+                "width": [
+                    400,
+                    400
+                ],
+                "rate": [
+                    15,
+                    24
+                ]
+            },
+            "container": "qtmux",
+            "name": "N800 / N810",
+            "extension": "m4v",
+            "acodec": {
+                "passes": [
+                    "bitrate=96000 profile=LC"
+                ],
+                "container": "qtmux",
+                "name": "faac",
+                "depth": [
+                    8,
+                    24
+                ],
+                "channels": [
+                    1,
+                    2
+                ],
+                "width": [
+                    8,
+                    24
+                ],
+                "rate": [
+                    8000,
+                    96000
+                ]
+            }
+        },
+        {
+            "vcodec": {
+                "passes": [
+                    "pass=qual quantizer=23  me=umh subme=6 cabac=0 threads=0"
+                ],
+                "container": "qtmux",
+                "name": "x264enc",
                 "width": [
                     120, 848
-                ], 
+                ],
                 "height": [
                     120, 480
-                ], 
+                ],
                 "rate": [
                     1, 30
                 ]
-            }, 
-            "container": "qtmux", 
-            "name": "N900 H.264", 
-            "extension": "m4v", 
+            },
+            "container": "qtmux",
+            "name": "N900 H.264",
+            "extension": "m4v",
             "icon": "file://nokia-n900.svg",
             "acodec": {
                 "passes": [
                     "bitrate=128000 profile=LC"
-                ], 
-                "container": "qtmux", 
-                "name": "faac", 
+                ],
+                "container": "qtmux",
+                "name": "faac",
                 "depth": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "channels": [
-                    1, 
+                    1,
                     2
-                ], 
+                ],
                 "width": [
-                    8, 
+                    8,
                     24
-                ], 
+                ],
                 "rate": [
                     8000,
                     96000
@@ -156,44 +156,44 @@
             },
             "icon": "file://nokia-n900.svg",
             "extension": "mp4",
-            "container": "qtmux", 
+            "container": "qtmux",
             "vcodec": {
-                "name": "xvidenc", 
-                "container": "qtmux", 
+                "name": "xvidenc",
+                "container": "qtmux",
                 "width": [
                     120, 848
-                ], 
+                ],
                 "height": [
                     120, 480
-                ], 
+                ],
                 "rate": [
                     1, 30
-                ], 
+                ],
                 "passes": [
                     "pass=quant quantizer=5 max-bframes=0 trellis=true"
                 ]
-            }, 
+            },
             "acodec": {
-                "name": "faac", 
-                "container": "qtmux", 
+                "name": "faac",
+                "container": "qtmux",
                 "width": [
                     8, 32
-                ], 
+                ],
                 "depth": [
                     8, 24
-                ], 
+                ],
                 "rate": [
                     8000, 96000
-                ], 
+                ],
                 "channels": [
                     1, 2
-                ], 
+                ],
                 "passes": [
                     "bitrate=131072 profile=LC"
                 ]
             }
         }
-    ], 
-    "model": "N Series", 
+    ],
+    "model": "N Series",
     "icon": "file://nokia-nseries.svg"
 }

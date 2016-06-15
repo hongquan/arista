@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """
     Arista Desktop Transcoder (GTK+ client)
@@ -33,38 +33,36 @@ import logging
 import os
 import re
 import shutil
-import subprocess
-import sys
-import threading
-import time
 import webbrowser
 
 from optparse import OptionParser
 
-import gobject
-import gio
-import gconf
+import gi
+
+gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+gi.require_version('Gst', '1.0')
+gi.require_version('GConf', '2.0')
+gi.require_version('Notify', '0.7')
+gi.require_version('WebKit', '3.0')
+from gi.repository import GLib
+from gi.repository import GObject
+from gi.repository import Gio
+from gi.repository import GConf
+from gi.repository import Gtk
+from gi.repository import Gdk
+from gi.repository import GdkPixbuf
+from gi.repository import Notify
 import cairo
-import gtk
 
-# FIXME: Stupid hack, see the other fixme comment below!
-if __name__ != "__main__":
-    import gst
+_log = logging.getLogger("arista-Gtk")
 
-_log = logging.getLogger("arista-gtk")
 
 try:
-    import pynotify
-    pynotify.init("icon-summary-body")
+    from gi.repository import WebKit
 except ImportError:
-    pynotify = None
-    _log.info("Unable to import pynotify - desktop notifications disabled")
-
-try:
-    import webkit
-except ImportError:
-    webkit = None
-    _log.info("Unable to import webkit - in-app documentation disabled")
+    WebKit = None
+    _log.info("Unable to import WebKit - in-app documentation disabled")
 
 import arista
 
@@ -88,14 +86,14 @@ def _new_combo_with_image(extra = []):
         extra passed types.
 
         @type extra: list
-        @param extra: Extra types to add to the gtk.ListStore
-        @rtype: gtk.ComboBox
+        @param extra: Extra types to add to the Gtk.ListStore
+        @rtype: Gtk.ComboBox
             @return: The newly created combo box
     """
-    store = gtk.ListStore(gtk.gdk.Pixbuf, gobject.TYPE_STRING, *extra)
-    combo = gtk.ComboBox(store)
-    pixbuf_cell = gtk.CellRendererPixbuf()
-    text_cell = gtk.CellRendererText()
+    store = Gtk.ListStore(Gtk.gdk.Pixbuf, GObject.TYPE_STRING, *extra)
+    combo = Gtk.ComboBox(store)
+    pixbuf_cell = Gtk.CellRendererPixbuf()
+    text_cell = Gtk.CellRendererText()
     combo.pack_start(pixbuf_cell, False)
     combo.pack_start(text_cell, True)
     combo.add_attribute(pixbuf_cell, 'pixbuf', 0)
@@ -112,11 +110,11 @@ def _get_icon_pixbuf(uri, width, height):
         @param width: The requested width of the pixbuf
         @type height: int
         @param height: The requested height of the pixbuf
-        @rtype: gtk.Pixbuf or None
+        @rtype: Gtk.Pixbuf or None
         @return: The pixbuf of the icon if it can be found
     """
     image = None
-    theme = gtk.icon_theme_get_default()
+    theme = Gtk.icon_theme_get_default()
 
     if not uri:
         return image
@@ -128,9 +126,9 @@ def _get_icon_pixbuf(uri, width, height):
             path = ""
 
         if os.path.exists(path):
-            image = gtk.gdk.pixbuf_new_from_file_at_size(path, width, height)
+            image = GdkPixbuf.Pixbuf.new_from_file_at_size(path, width, height)
     elif uri.startswith("stock://"):
-        image = theme.load_icon(uri[8:], gtk.ICON_SIZE_MENU, 0)
+        image = theme.load_icon(uri[8:], Gtk.ICON_SIZE_MENU, 0)
     else:
         raise ValueError(_("Unknown icon URI %(uri)s") % {
             "uri": uri
@@ -149,51 +147,57 @@ def _get_filename_icon(filename):
 
         @type filename: str
         @param filename: The name of the file whose icon to fetch
-        @rtype: gtk.ThemedIcon or None
+        @rtype: Gtk.ThemedIcon or None
         @return: The requested unloaded icon or nothing if it cannot be found
     """
-    theme = gtk.icon_theme_get_default()
+    theme = Gtk.icon_theme_get_default()
 
-    names = gio.content_type_get_icon(gio.content_type_guess(filename)).get_property("names")
-    icon = theme.choose_icon(names, gtk.icon_size_lookup(gtk.ICON_SIZE_MENU)[0], 0)
+    names = Gio.content_type_get_icon(Gio.content_type_guess(filename)).get_property("names")
+    icon = theme.choose_icon(names, Gtk.icon_size_lookup(Gtk.ICON_SIZE_MENU)[0], 0)
 
     return icon
 
-class LogoWidget(gtk.Widget):
+class LogoWidget(Gtk.Widget):
     """
         A widget to show the Arista logo.
 
-        See http://svn.gnome.org/viewvc/pygtk/trunk/examples/gtk/widget.py?view=markup
+        See http://svn.gnome.org/viewvc/pyGtk/trunk/examples/Gtk/widget.py?view=markup
     """
     def __init__(self):
-        gtk.Widget.__init__(self)
+        Gtk.Widget.__init__(self)
 
         # Load the logo overlay
         logo_path = arista.utils.get_path("ui", "logo.svg")
-        self.pixbuf = gtk.gdk.pixbuf_new_from_file(logo_path)
+        self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(logo_path)
 
     def do_realize(self):
         """
             Realize the widget. Setup the window.
         """
-        self.set_flags(self.flags() | gtk.REALIZED)
+        self.set_realized(True)
 
-        self.window = gtk.gdk.Window(
+        attrs = Gdk.WindowAttr()
+        attrs.width = self.allocation.width
+        attrs.height = self.allocation.height
+        attrs.window_type = Gdk.WindowType.CHILD
+        attrs.wclass = Gdk.WindowWindowClass.INPUT_OUTPUT
+        attrs.event_mask = self.get_events() | Gdk.EventMask.EXPOSURE_MASK | Gdk.EventMask.BUTTON_PRESS_MASK
+        a_mask = Gdk.WindowAttributesType.WMCLASS
+
+        self.window = Gdk.Window(
             self.get_parent_window(),
-            width = self.allocation.width,
-            height = self.allocation.height,
-            window_type = gtk.gdk.WINDOW_CHILD,
-            wclass = gtk.gdk.INPUT_OUTPUT,
-            event_mask = self.get_events() | gtk.gdk.EXPOSURE_MASK | gtk.gdk.BUTTON_PRESS_MASK)
+            attrs, a_mask)
 
         self.window.set_user_data(self)
 
-        self.style.attach(self.window)
+        # style = self.get_style_context()
+        # style.attach(self.window)
 
-        self.style.set_background(self.window, gtk.STATE_NORMAL)
-        self.window.move_resize(*self.allocation)
+        # style.set_background(self.window)
+        r = self.allocation
+        self.window.move_resize(r.x, r.y, r.width, r.height)
 
-        self.gc = self.style.fg_gc[gtk.STATE_NORMAL]
+        # self.gc = style.fg_gc[Gtk.STATE_NORMAL]
 
     def do_unrealize(self):
         """
@@ -214,8 +218,9 @@ class LogoWidget(gtk.Widget):
         """
         self.allocation = allocation
 
-        if self.flags() & gtk.REALIZED:
-            self.window.move_resize(*allocation)
+        if self.get_realized():
+            r = allocation
+            self.window.move_resize(r.x, r.y, r.width, r.height)
 
     def do_expose_event(self, event):
         """
@@ -229,7 +234,7 @@ class LogoWidget(gtk.Widget):
         # selected color (the color you usually see in progress bars, for
         # example) and make the gradient go from slightly lighter to slightly
         # darker.
-        color = self.style.bg[gtk.STATE_SELECTED]
+        color = self.style.bg[Gtk.STATE_SELECTED]
         r, g, b = color.red / 65535.0, color.green / 65535.0, \
                   color.blue / 65535.0
         avg = (r + g + b) / 3.0
@@ -277,7 +282,7 @@ class LogoWidget(gtk.Widget):
                                 (w / 2) - (self.pixbuf.get_width() / 2),
                                 (h / 2) - (self.pixbuf.get_height() / 2))
 
-gobject.type_register(LogoWidget)
+GObject.type_register(LogoWidget)
 
 class MainWindow(object):
     """
@@ -293,7 +298,7 @@ class MainWindow(object):
         ui_path = arista.utils.get_path("ui", "main.ui")
 
         # Load the GUI
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
         self.builder.connect_signals(self)
 
@@ -312,16 +317,16 @@ class MainWindow(object):
         self.logo = LogoWidget()
         self.logo.connect("button-press-event", self.logo_button_pressed)
 
-        self.logo.drag_dest_set(gtk.DEST_DEFAULT_ALL, [('text/plain', 0, 0)], gtk.gdk.ACTION_COPY)
+        self.logo.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new('text/plain', 0, 0)], Gdk.DragAction.COPY)
         self.logo.connect("drag-data-received", self.drag_data_received)
 
-        self.preview.drag_dest_set(gtk.DEST_DEFAULT_ALL, [('text/plain', 0, 0)], gtk.gdk.ACTION_COPY)
+        self.preview.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new('text/plain', 0, 0)], Gdk.DragAction.COPY)
         self.preview.connect("drag-data-received", self.drag_data_received)
 
-        self.image_preview = gtk.Alignment(xscale = 1.0, yscale = 1.0)
+        self.image_preview = Gtk.Alignment(xscale = 1.0, yscale = 1.0)
         self.image_preview.set_padding(0, 5, 0, 0)
         self.image_preview.add(self.logo)
-        self.builder.get_object("vbox_preview").pack_start(self.image_preview)
+        self.builder.get_object("vbox_preview").pack_start(self.image_preview, False, False, 0)
 
         self.add_dialog = None
         self.prefs_dialog = None
@@ -336,35 +341,27 @@ class MainWindow(object):
         self.queue.connect("entry-complete", self.on_queue_entry_complete)
 
         # Setup configuration system
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
 
-        client.add_dir(CONFIG_PATH, gconf.CLIENT_PRELOAD_NONE)
+        client.add_dir(CONFIG_PATH, GConf.ClientPreloadType.PRELOAD_NONE)
 
         # Update UI to reflect currently stored settings
-        try:
-            value = client.get_value(CONFIG_PATH + "/show_toolbar")
-            if value:
-                self.toolbar.show()
-            else:
-                self.toolbar.hide()
-            self.menuitem_toolbar.set_active(value)
-        except ValueError:
-            if DEFAULT_SHOW_TOOLBAR:
-                self.toolbar.show()
-            else:
-                self.toolbar.hide()
-            self.menuitem_toolbar.set_active(DEFAULT_SHOW_TOOLBAR)
+        value = client.get(CONFIG_PATH + "/show_toolbar")
+        if value is None:
+            value = DEFAULT_SHOW_TOOLBAR
+        if value:
+            self.toolbar.show()
+        else:
+            self.toolbar.hide()
+        self.menuitem_toolbar.set_active(value)
 
         client.notify_add(CONFIG_PATH + "/show_toolbar",
-                          self.on_gconf_show_toolbar)
+                          self.on_GConf_show_toolbar)
 
-        try:
-            value = client.get_value(CONFIG_PATH + "/last_open_path")
-            if value and os.path.exists(value):
-                self.last_open_path = value
-            else:
-                self.last_open_path = DEFAULT_OPEN_PATH
-        except ValueError:
+        value = client.get(CONFIG_PATH + "/last_open_path")
+        if value is not None and os.path.exists(value):
+            self.last_open_path = value
+        else:
             self.last_open_path = DEFAULT_OPEN_PATH
 
         # Show the interface!
@@ -378,7 +375,7 @@ class MainWindow(object):
             self.builder.get_object("menubar").hide()
             self.toolbar.hide()
             self.window.resize(320, 240)
-            self.window.set_position(gtk.WIN_POS_CENTER_ALWAYS)
+            self.window.set_position(Gtk.WIN_POS_CENTER_ALWAYS)
 
             device = arista.presets.get()[self.runoptions.device]
 
@@ -466,10 +463,10 @@ class MainWindow(object):
         """
         try:
             if self.transcoder:
-                if self.transcoder.state in [gst.STATE_READY, gst.STATE_PAUSED]:
+                if self.transcoder.state in [Gst.STATE_READY, Gst.STATE_PAUSED]:
                     self.transcoder.start()
 
-                self.transcoder.pipe.send_event(gst.event_new_eos())
+                self.transcoder.pipe.send_event(Gst.event_new_eos())
         except:
             pass
 
@@ -478,13 +475,13 @@ class MainWindow(object):
         _log.debug(_("Cleaning up and flushing buffers..."))
 
         def waiting_to_quit():
-            if not self.transcoder or self.transcoder.state == gst.STATE_NULL:
-                gobject.idle_add(gtk.main_quit)
+            if not self.transcoder or self.transcoder.state == Gst.STATE_NULL:
+                GObject.idle_add(Gtk.main_quit)
                 return False
             else:
                 return True
 
-        gobject.idle_add(waiting_to_quit)
+        GObject.idle_add(waiting_to_quit)
 
         return True
 
@@ -536,7 +533,7 @@ class MainWindow(object):
         if self.runoptions.simple and len(self.queue) == 1:
             # This is the last item in the simplified GUI, so we are done and
             # should exit as soon as possible!
-            gobject.idle_add(gtk.main_quit)
+            GObject.idle_add(Gtk.main_quit)
             return
 
         # Hide live preview while we wait for the item to finish
@@ -560,10 +557,10 @@ class MainWindow(object):
         """
             Update the GConf preference for showing or hiding the toolbar.
         """
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
         client.set_bool(CONFIG_PATH + "/show_toolbar", widget.get_active())
 
-    def on_gconf_show_toolbar(self, client, connection, entry, args):
+    def on_GConf_show_toolbar(self, client, connection, entry, args):
         """
             Show or hide the toolbar and set the menu item to reflect which
             has happened when the GConf preference has changed.
@@ -584,20 +581,20 @@ class MainWindow(object):
                 "infile": entry.transcoder.infile,
             })
 
-            gtk.gdk.threads_enter()
+            Gtk.gdk.threads_enter()
 
             msg = "The input file or device contains no audio or video " \
                   "streams and will be removed from the queue."
 
-            dialog = gtk.MessageDialog(self.window,
-                            gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
-                            type = gtk.MESSAGE_ERROR,
-                            buttons = gtk.BUTTONS_OK,
+            dialog = Gtk.MessageDialog(self.window,
+                            Gtk.DIALOG_MODAL | Gtk.DIALOG_DESTROY_WITH_PARENT,
+                            type = Gtk.MESSAGE_ERROR,
+                            buttons = Gtk.BUTTONS_OK,
                             message_format = msg)
             dialog.set_title(_("Error with input!"))
             dialog.run()
             dialog.destroy()
-            gtk.gdk.threads_leave()
+            Gtk.gdk.threads_leave()
             self.on_queue_entry_complete(queue, entry)
         else:
             entry.transcoder.connect("pass-setup",
@@ -609,32 +606,26 @@ class MainWindow(object):
             start the transcoder after attaching to the video tee so that
             we can show a nice preview.
         """
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
 
-        try:
-            show_preview = client.get_value(CONFIG_PATH + "/show_preview")
-        except ValueError:
-            show_preview = DEFAULT_SHOW_PREVIEW
+        show_preview = client.get(CONFIG_PATH + "/show_preview") or DEFAULT_SHOW_PREVIEW
 
-        try:
-            fps = client.get_value(CONFIG_PATH + "/preview_fps")
-        except ValueError:
-            fps = DEFAULT_PREVIEW_FPS
+        fps = client.get(CONFIG_PATH + "/preview_fps") or DEFAULT_PREVIEW_FPS
 
         transcoder = entry.transcoder
         self.transcoder = transcoder
-        gobject.timeout_add(500, self.on_status_update)
+        GLib.timeout_add(500, self.on_status_update)
 
         if show_preview:
             element = transcoder.pipe.get_by_name("videotee")
 
             if element:
-                pipe = gst.parse_launch("queue name=preview_source ! decodebin2 ! videoscale method=bilinear ! videorate ! ffmpegcolorspace ! video/x-raw-yuv, framerate=%d/1; video/x-raw-rgb, framerate=%d/1 ! autovideosink name=preview_sink" % (fps, fps))
+                pipe = Gst.parse_launch("queue name=preview_source ! decodebin2 ! videoscale method=bilinear ! videorate ! ffmpegcolorspace ! video/x-raw-yuv, framerate=%d/1; video/x-raw-rgb, framerate=%d/1 ! autovideosink name=preview_sink" % (fps, fps))
                 psink = pipe.get_by_name("preview_sink")
                 psink.connect("element-added", self.on_preview_sink_element_added)
                 transcoder.pipe.add(pipe)
                 src = pipe.get_by_name("preview_source")
-                gst.element_link_many(element, src)
+                Gst.element_link_many(element, src)
                 bus = transcoder.pipe.get_bus()
                 bus.enable_sync_message_emission()
                 bus.connect("sync-message::element", self.on_sync_msg)
@@ -650,14 +641,14 @@ class MainWindow(object):
         """
         entry.transcoder.stop()
 
-        if pynotify and not entry.force_stopped:
-            theme = gtk.icon_theme_get_default()
+        if Notify and not entry.force_stopped:
+            theme = Gtk.icon_theme_get_default()
             icon_info = theme.lookup_icon("dialog-error", 64, 0)
             if icon_info:
                 icon = icon_info.get_filename()
             else:
                 icon = ""
-            notice = pynotify.Notification(_("Error!"), _("Conversion of %(filename)s to %(device)s %(preset)s failed! Reason: %(reason)s") % {
+            notice = Notify.Notification(_("Error!"), _("Conversion of %(filename)s to %(device)s %(preset)s failed! Reason: %(reason)s") % {
                 "filename": os.path.basename(entry.options.output_uri),
                 "device": entry.options.preset.device,
                 "preset": entry.options.preset.name,
@@ -671,7 +662,7 @@ class MainWindow(object):
         if self.runoptions.simple and len(self.queue) == 1:
             # This is the last item in the simplified GUI, so we are done and
             # should exit as soon as possible!
-            gobject.idle_add(gtk.main_quit)
+            GObject.idle_add(Gtk.main_quit)
             return
 
         self.image_preview.show()
@@ -682,13 +673,13 @@ class MainWindow(object):
         """
             An entry in the queue is finished. Update the queue model.
         """
-        if pynotify:
+        if Notify:
             try:
                 icon = arista.utils.get_path("presets/" + entry.options.preset.device.icon[7:])
             except IOError:
                 icon = ""
 
-            notice = pynotify.Notification(_("Job done"), _("Conversion of %(filename)s to %(device)s %(preset)s %(action)s") % {
+            notice = Notify.Notification(_("Job done"), _("Conversion of %(filename)s to %(device)s %(preset)s %(action)s") % {
                 "filename": os.path.basename(entry.options.output_uri),
                 "device": entry.options.preset.device.name,
                 "preset": entry.options.preset.name,
@@ -699,7 +690,7 @@ class MainWindow(object):
         if self.runoptions.simple and len(self.queue) == 1:
             # This is the last item in the simplified GUI, so we are done and
             # should exit as soon as possible!
-            gobject.idle_add(gtk.main_quit)
+            GObject.idle_add(Gtk.main_quit)
             return
 
         self.image_preview.show()
@@ -728,11 +719,11 @@ class MainWindow(object):
 
         msg_name = msg.structure.get_name()
         if msg_name == "prepare-xwindow-id":
-            gtk.gdk.threads_enter()
+            Gtk.gdk.threads_enter()
             imagesink = msg.src
             imagesink.set_property("force-aspect-ratio", True)
             imagesink.set_xwindow_id(self.preview.window.xid)
-            gtk.gdk.threads_leave()
+            Gtk.gdk.threads_leave()
 
     def on_status_update(self):
         """
@@ -741,7 +732,7 @@ class MainWindow(object):
         percent = 0.0
         state = self.transcoder.state
 
-        if state != gst.STATE_PAUSED:
+        if state != Gst.STATE_PAUSED:
             try:
                 percent, time_rem = self.transcoder.status
 
@@ -773,7 +764,7 @@ class MainWindow(object):
                     "file_info": file_info,
                 }
 
-                gtk.gdk.threads_enter()
+                Gtk.gdk.threads_enter()
 
                 if percent == 0.0:
                     self.progress.pulse()
@@ -781,12 +772,12 @@ class MainWindow(object):
                     self.progress.set_fraction(percent)
 
                 self.progress.set_text(info_string)
-                gtk.gdk.threads_leave()
-            except arista.transcoder.TranscoderStatusException, e:
+                Gtk.gdk.threads_leave()
+            except arista.transcoder.TranscoderStatusException as e:
                 _log.debug(str(e))
                 self.progress.pulse()
 
-        return percent < 1.0 and state != gst.STATE_NULL
+        return percent < 1.0 and state != Gst.STATE_NULL
 
     def on_cancel_clicked(self, widget):
         """
@@ -796,36 +787,36 @@ class MainWindow(object):
             self.stop_processing_entry(self.queue[0])
 
     def on_install_device(self, widget):
-        dialog = gtk.FileChooserDialog(title=_("Choose Source File..."),
-                        buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                                 gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+        dialog = Gtk.FileChooserDialog(title=_("Choose Source File..."),
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
         dialog.set_property("local-only", False)
         dialog.set_current_folder(self.last_open_path)
         response = dialog.run()
         dialog.hide()
-        if response == gtk.RESPONSE_ACCEPT:
+        if response == Gtk.RESPONSE_ACCEPT:
             filename = dialog.get_filename()
-            client = gconf.client_get_default()
+            client = GConf.Client.get_default()
             client.set_string(CONFIG_PATH + "/last_open_path",
                               os.path.dirname(filename))
             try:
                 devices = arista.presets.extract(open(filename))
-            except Exception, e:
+            except Exception as e:
                 _log.error(str(e))
-                dialog = gtk.MessageDialog(self.window, type=gtk.MESSAGE_ERROR, buttons=gtk.BUTTONS_CLOSE, message_format=_("Problem importing preset. This file does not appear to be a valid Arista preset!"))
+                dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_ERROR, buttons=Gtk.BUTTONS_CLOSE, message_format=_("Problem importing preset. This file does not appear to be a valid Arista preset!"))
                 dialog.run()
                 dialog.destroy()
                 return
 
             arista.presets.reset()
-            if pynotify:
+            if Notify:
                 for device in devices:
                     try:
                         icon = arista.utils.get_path("presets", arista.presets.get()[device].icon[7:])
                     except:
                         icon = None
 
-                    notice = pynotify.Notification(_("Installation Successful"), _("Device preset %(name)s successfully installed.") % {
+                    notice = Notify.Notification(_("Installation Successful"), _("Device preset %(name)s successfully installed.") % {
                         "name": arista.presets.get()[device].name,
                     }, icon)
                     notice.show()
@@ -840,7 +831,7 @@ class PrefsDialog(object):
         ui_path = arista.utils.get_path("ui", "prefs.ui")
 
         # Load the interface definition file
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         # Shortcuts for accessing widgets
@@ -850,36 +841,33 @@ class PrefsDialog(object):
         self.spin_live_fps = self.builder.get_object("spin_live_fps")
 
         # Setup configuration system
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
 
-        client.add_dir(CONFIG_PATH, gconf.CLIENT_PRELOAD_NONE)
+        client.add_dir(CONFIG_PATH, GConf.ClientPreloadType.PRELOAD_NONE)
 
         # Update UI to reflect currently stored settings
-        try:
-            value = client.get_value(CONFIG_PATH + "/check_inputs")
-            self.check_inputs.set_active(value)
-        except ValueError:
-            self.check_inputs.set_active(DEFAULT_CHECK_INPUTS)
+        value = client.get(CONFIG_PATH + "/check_inputs")
+        if value is None:
+            value = DEFAULT_CHECK_INPUTS
+        self.check_inputs.set_active(value)
 
-        try:
-            value = client.get_value(CONFIG_PATH + "/show_preview")
-            self.check_show_live.set_active(value)
-        except ValueError:
-            self.check_show_live.set_active(DEFAULT_SHOW_PREVIEW)
+        value = client.get(CONFIG_PATH + "/show_preview")
+        if value is None:
+            value = DEFAULT_SHOW_PREVIEW
+        self.check_show_live.set_active(value)
 
-        try:
-            value = client.get_value(CONFIG_PATH + "/preview_fps")
-            self.spin_live_fps.set_value(value)
-        except ValueError:
-            self.spin_live_fps.set_value(DEFAULT_PREVIEW_FPS)
+        value = client.get(CONFIG_PATH + "/preview_fps")
+        if value is None:
+            value = DEFAULT_PREVIEW_FPS
+        self.spin_live_fps.set_value(value)
 
         # Register handlers for when settings are changed
         client.notify_add(CONFIG_PATH + "/check_inputs",
-                          self.on_gconf_check_inputs)
+                          self.on_GConf_check_inputs)
         client.notify_add(CONFIG_PATH + "/show_preview",
-                          self.on_gconf_show_preview)
+                          self.on_GConf_show_preview)
         client.notify_add(CONFIG_PATH + "/preview_fps",
-                          self.on_gconf_preview_fps)
+                          self.on_GConf_preview_fps)
 
         # Connect to signals defined in UI definition file
         self.builder.connect_signals(self)
@@ -897,14 +885,14 @@ class PrefsDialog(object):
         """
             Update GConf preference for checking DVD drives.
         """
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
         client.set_bool(CONFIG_PATH + "/check_inputs", widget.get_active())
 
     def on_check_show_live_toggled(self, widget):
         """
             Update GConf preference for showing a live preview during encoding.
         """
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
         client.set_bool(CONFIG_PATH + "/show_preview", widget.get_active())
 
     def on_fps_changed(self, widget):
@@ -913,17 +901,17 @@ class PrefsDialog(object):
             the live preview. The higher the number the more CPU is diverted
             from encoding to displaying the video.
         """
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
         client.set_int(CONFIG_PATH + "/preview_fps", int(widget.get_value()))
 
-    def on_gconf_check_inputs(self, client, connection, entry, args):
+    def on_GConf_check_inputs(self, client, connection, entry, args):
         """
             Update UI when the GConf preference for checking DVD drives has
             been modified.
         """
         self.check_inputs.set_active(entry.get_value().get_bool())
 
-    def on_gconf_show_preview(self, client, connection, entry, args):
+    def on_GConf_show_preview(self, client, connection, entry, args):
         """
             Update UI when the GConf preference for showing the live preview
             has been modified.
@@ -933,7 +921,7 @@ class PrefsDialog(object):
         self.check_show_live.set_active(value)
         self.spin_live_fps.set_sensitive(value)
 
-    def on_gconf_preview_fps(self, client, connection, entry, args):
+    def on_GConf_preview_fps(self, client, connection, entry, args):
         """
             Update UI when the GConf preference for the preview framerate has
             been modified.
@@ -941,11 +929,11 @@ class PrefsDialog(object):
         self.spin_live_fps.set_value(entry.get_value().get_int())
 
     def on_reset_clicked(self, widget):
-        dialog = gtk.MessageDialog(self.window, type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_YES_NO, message_format=_("Are you sure you want to reset your device presets? Doing so will permanently remove any modifications you have made to presets that ship with or share a short name with presets that ship with Arista!"))
+        dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_WARNING, buttons=Gtk.BUTTONS_YES_NO, message_format=_("Are you sure you want to reset your device presets? Doing so will permanently remove any modifications you have made to presets that ship with or share a short name with presets that ship with Arista!"))
         response = dialog.run()
         dialog.destroy()
 
-        if response == gtk.RESPONSE_YES:
+        if response == Gtk.RESPONSE_YES:
             # Reset all presets that ship with Arista to the factory default.
             # This does not touch user-made presets unless the shortname
             # matches one of the factory default preset shortnames.
@@ -964,7 +952,7 @@ class PropertiesDialog(object):
 
         ui_path = arista.utils.get_path("ui", "props.ui")
 
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         self.window = self.builder.get_object("props_dialog")
@@ -979,7 +967,7 @@ class PropertiesDialog(object):
 
         # GStreamer's DVD handling is VERY limited, to the point of making
         # chapter and audio stream selection extremely difficult if not
-        # impossible when using gst-launch. Hide chapter and audio selection
+        # impossible when using Gst-launch. Hide chapter and audio selection
         # until this can be fixed somehow!
         self.table_dvd.remove(self.builder.get_object("label_chapter"))
         self.table_dvd.remove(self.combo_chapter)
@@ -998,8 +986,8 @@ class PropertiesDialog(object):
         if path.startswith("dvd://"):
             # Setup combo boxes
             for combo, handler in [(self.combo_title, self.on_title_changed), (self.combo_chapter, self.on_chapter_changed), (self.combo_audio, self.on_audio_changed)]:
-                store = gtk.ListStore(gobject.TYPE_STRING, gobject.TYPE_PYOBJECT)
-                text_cell = gtk.CellRendererText()
+                store = Gtk.ListStore(GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)
+                text_cell = Gtk.CellRendererText()
                 combo.set_model(store)
                 combo.pack_start(text_cell, True)
                 combo.add_attribute(text_cell, 'text', 0)
@@ -1163,7 +1151,7 @@ class AddDialog(object):
 
         ui_path = arista.utils.get_path("ui", "add.ui")
 
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         self.window = self.builder.get_object("add_dialog")
@@ -1176,10 +1164,10 @@ class AddDialog(object):
 
         self.settings_frame = self.builder.get_object("settings_frame")
 
-        self.presets_model = gtk.ListStore(gtk.gdk.Pixbuf,        # Image
-                                           gobject.TYPE_STRING,   # Preset
-                                           gobject.TYPE_PYOBJECT) # Data
-        self.presets_model.set_sort_column_id(1, gtk.SORT_ASCENDING)
+        self.presets_model = Gtk.ListStore(GdkPixbuf.Pixbuf,        # Image
+                                           GObject.TYPE_STRING,   # Preset
+                                           GObject.TYPE_PYOBJECT) # Data
+        self.presets_model.set_sort_column_id(1, Gtk.SortType.ASCENDING)
 
         self.presets_filter = self.presets_model.filter_new()
         self.presets_filter.set_visible_func(self._filter)
@@ -1188,10 +1176,10 @@ class AddDialog(object):
 
         self.presets_view.get_selection().connect("changed", self.on_preset_changed)
 
-        pixbuf_renderer = gtk.CellRendererPixbuf()
-        preset_renderer = gtk.CellRendererText()
+        pixbuf_renderer = Gtk.CellRendererPixbuf()
+        preset_renderer = Gtk.CellRendererText()
 
-        column = gtk.TreeViewColumn(_("Device Preset"))
+        column = Gtk.TreeViewColumn(_("Device Preset"))
         column.pack_start(pixbuf_renderer, False)
         column.set_attributes(pixbuf_renderer, pixbuf = 0)
         column.pack_start(preset_renderer)
@@ -1208,18 +1196,18 @@ class AddDialog(object):
 
         self.setup_source()
 
-        gobject.idle_add(self.setup_devices)
+        GObject.idle_add(self.setup_devices)
 
         self.fileiter = None
         self.options = arista.transcoder.TranscoderOptions()
 
         # Setup configuration system
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
 
-        client.add_dir(CONFIG_PATH, gconf.CLIENT_PRELOAD_NONE)
+        client.add_dir(CONFIG_PATH, GConf.ClientPreloadType.PRELOAD_NONE)
 
         try:
-            value = client.get_value(CONFIG_PATH + "/last_open_path")
+            value = client.get(CONFIG_PATH + "/last_open_path")
             if value and os.path.exists(value):
                 self.last_open_path = value
             else:
@@ -1230,7 +1218,7 @@ class AddDialog(object):
         self.button_destination.set_current_folder(self.last_open_path)
 
         client.notify_add(CONFIG_PATH + "/last_open_path",
-                          self.on_gconf_last_open_path)
+                          self.on_GConf_last_open_path)
         client.notify_add(CONFIG_PATH + "/check_inputs", self.setup_source)
 
         self.source.show()
@@ -1244,8 +1232,8 @@ class AddDialog(object):
             Setup the source widget. Creates a combo box or a file input button
             depending on the settings and available devices.
         """
-        theme = gtk.icon_theme_get_default()
-        size = gtk.icon_size_lookup(gtk.ICON_SIZE_MENU)[0]
+        theme = Gtk.icon_theme_get_default()
+        size = Gtk.icon_size_lookup(Gtk.ICON_SIZE_MENU)[0]
 
         # Already exists? Remove it!
         if self.source:
@@ -1262,13 +1250,13 @@ class AddDialog(object):
                 self.finder_disc_lost = None
 
         # Should we check for DVD drives?
-        client = gconf.client_get_default()
+        client = GConf.Client.get_default()
         try:
-            check_inputs = client.get_value(CONFIG_PATH + "/check_inputs")
+            check_inputs = client.get(CONFIG_PATH + "/check_inputs")
         except ValueError:
             check_inputs = DEFAULT_CHECK_INPUTS
 
-        self.source = _new_combo_with_image([gobject.TYPE_PYOBJECT])
+        self.source = _new_combo_with_image([GObject.TYPE_PYOBJECT])
         model = self.source.get_model()
 
         if check_inputs:
@@ -1277,7 +1265,7 @@ class AddDialog(object):
             if not self.finder:
                 self.finder = arista.inputs.InputFinder()
 
-            icon = gtk.stock_lookup(gtk.STOCK_CDROM)[0]
+            icon = Gtk.stock_lookup(Gtk.STOCK_CDROM)[0]
 
             if len(self.finder.drives) or len(self.finder.capture_devices):
                 for block, drive in self.finder.drives.items():
@@ -1313,29 +1301,29 @@ class AddDialog(object):
                                                     self.on_disc_lost)
 
         iter = model.append()
-        icon = gtk.stock_lookup(gtk.STOCK_OPEN)[0]
+        icon = Gtk.stock_lookup(Gtk.STOCK_OPEN)[0]
         model.set_value(iter, 0, theme.load_icon(icon, size, 0))
         model.set_value(iter, 1, _("Choose File..."))
 
         iter = model.append()
-        icon = gtk.stock_lookup(gtk.STOCK_OPEN)[0]
+        icon = Gtk.stock_lookup(Gtk.STOCK_OPEN)[0]
         model.set_value(iter, 0, theme.load_icon(icon, size, 0))
         model.set_value(iter, 1, _("Choose Directory..."))
 
         self.source.connect("changed", self.on_source_changed)
 
         # Add properties button to set source properties like subtitles
-        source_prop_image = gtk.Image()
-        source_prop_image.set_from_stock(gtk.STOCK_PROPERTIES,
-                                         gtk.ICON_SIZE_MENU)
-        source_properties = gtk.Button()
+        source_prop_image = Gtk.Image()
+        source_prop_image.set_from_stock(Gtk.STOCK_PROPERTIES,
+                                         Gtk.ICON_SIZE_MENU)
+        source_properties = Gtk.Button()
         source_properties.add(source_prop_image)
         source_properties.connect("clicked", self.on_source_properties)
 
         if not self.source_hbox:
-            self.source_hbox = gtk.HBox()
+            self.source_hbox = Gtk.HBox()
             self.source_hbox.pack_end(source_properties, expand = False)
-            self.table.attach(self.source_hbox, 1, 2, 0, 1, yoptions = gtk.FILL)
+            self.table.attach(self.source_hbox, 1, 2, 0, 1, yoptions = Gtk.FILL)
 
         self.source_hbox.pack_start(self.source)
 
@@ -1355,7 +1343,7 @@ class AddDialog(object):
 
         self.default_device = 0
         for x, (id, device) in enumerate(arista.presets.get().items()):
-            for (preset_id, preset) in sorted(device.presets.items(), lambda x, y: cmp(x[1].name, y[1].name)):
+            for (preset_id, preset) in sorted(device.presets.items(), key=lambda x: x[1].name):
                 iter = self._add_device(model, device, preset)
 
                 if id == "computer" and preset == device.default_preset:
@@ -1494,7 +1482,7 @@ class AddDialog(object):
         # Update UI sensitivity of various buttons
         self.on_preset_changed(self.presets_view.get_selection())
 
-    def on_gconf_last_open_path(self, client, connection, entry, args):
+    def on_GConf_last_open_path(self, client, connection, entry, args):
         """
             Change the default location of the open dialog when choosing a
             new file or folder to transcode.
@@ -1511,27 +1499,27 @@ class AddDialog(object):
         """
             The source combo box or file chooser button has changed, update!
         """
-        theme = gtk.icon_theme_get_default()
-        size = gtk.ICON_SIZE_MENU
-        width, height = gtk.icon_size_lookup(size)
+        theme = Gtk.icon_theme_get_default()
+        size = Gtk.ICON_SIZE_MENU
+        width, height = Gtk.icon_size_lookup(size)
 
         iter = widget.get_active_iter()
         model = widget.get_model()
         item = model.get_value(iter, 1)
         if item == _("Choose File..."):
-            dialog = gtk.FileChooserDialog(title=_("Choose Source File..."),
-                        buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                                 gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+            dialog = Gtk.FileChooserDialog(title=_("Choose Source File..."),
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
             dialog.set_property("local-only", False)
             dialog.set_current_folder(self.last_open_path)
             response = dialog.run()
             dialog.hide()
             filename = None
-            if response == gtk.RESPONSE_ACCEPT:
+            if response == Gtk.RESPONSE_ACCEPT:
                 if self.fileiter:
                     model.remove(self.fileiter)
                 filename = dialog.get_filename()
-                client = gconf.client_get_default()
+                client = GConf.Client.get_default()
                 client.set_string(CONFIG_PATH + "/last_open_path",
                                   os.path.dirname(filename))
                 self.set_source_to_path(filename)
@@ -1543,19 +1531,19 @@ class AddDialog(object):
                     widget.set_active(0)
 
         elif item == _("Choose Directory..."):
-            dialog = gtk.FileChooserDialog(title=_("Choose Source Directory..."),
-                        action=gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER,
-                        buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                                 gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+            dialog = Gtk.FileChooserDialog(title=_("Choose Source Directory..."),
+                        action=Gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER,
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
             dialog.set_property("local-only", False)
             dialog.set_current_folder(self.last_open_path)
             response = dialog.run()
             dialog.hide()
-            if response == gtk.RESPONSE_ACCEPT:
+            if response == Gtk.RESPONSE_ACCEPT:
                 if self.fileiter:
                     model.remove(self.fileiter)
                 directory = dialog.get_current_folder()
-                client = gconf.client_get_default()
+                client = GConf.Client.get_default()
                 client.set_string(CONFIG_PATH + "/last_open_path", directory)
                 self.set_source_to_path(directory)
             else:
@@ -1572,8 +1560,8 @@ class AddDialog(object):
         """
             Set the source selector widget to a path.
         """
-        size = gtk.ICON_SIZE_MENU
-        width, height = gtk.icon_size_lookup(size)
+        size = Gtk.ICON_SIZE_MENU
+        width, height = Gtk.icon_size_lookup(size)
 
         model = self.source.get_model()
         pos = self.source.get_active()
@@ -1588,7 +1576,7 @@ class AddDialog(object):
         self.options.reset()
 
         if os.path.isdir(path):
-            icon = icon = _get_icon_pixbuf("stock://gtk-directory", width, height)
+            icon = icon = _get_icon_pixbuf("stock://Gtk-directory", width, height)
         else:
             icon = _get_filename_icon(path)
             if icon:
@@ -1639,14 +1627,14 @@ class AddDialog(object):
             (and optionally installing) required GStreamer elements.
         """
         if not can_encode:
-            gtk.gdk.threads_enter()
-            dialog = gtk.MessageDialog(self.window, type = gtk.MESSAGE_ERROR, buttons = gtk.BUTTONS_OK, message_format = _("Cannot add conversion to queue because of missing elements!"))
+            Gtk.gdk.threads_enter()
+            dialog = Gtk.MessageDialog(self.window, type = Gtk.MESSAGE_ERROR, buttons = Gtk.BUTTONS_OK, message_format = _("Cannot add conversion to queue because of missing elements!"))
             dialog.run()
             dialog.destroy()
-            gtk.gdk.threads_leave()
+            Gtk.gdk.threads_leave()
             return
 
-        gtk.gdk.threads_enter()
+        Gtk.gdk.threads_enter()
         iter = self.source.get_active_iter()
         model = self.source.get_model()
         inpath = model.get_value(iter, 2)[0]
@@ -1680,7 +1668,7 @@ class AddDialog(object):
 
         self.window.destroy()
 
-        gtk.gdk.threads_leave()
+        Gtk.gdk.threads_leave()
 
     def on_new_clicked(self, widget):
         """
@@ -1781,11 +1769,11 @@ class AddDialog(object):
         model, iter = self.presets_view.get_selection().get_selected()
         device, preset = model.get_value(iter, 2)
 
-        dialog = gtk.MessageDialog(self.window, type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_YES_NO, message_format="Are you sure you want to delete the %(preset)s preset?" % { "preset": device.name + " - " + preset.name })
+        dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_WARNING, buttons=Gtk.BUTTONS_YES_NO, message_format="Are you sure you want to delete the %(preset)s preset?" % { "preset": device.name + " - " + preset.name })
         response = dialog.run()
         dialog.destroy()
 
-        if response == gtk.RESPONSE_YES:
+        if response == Gtk.RESPONSE_YES:
             devices = arista.presets.get()
             name = ".".join(os.path.basename(device.filename).split(".")[:-1])
 
@@ -1828,15 +1816,15 @@ class AddDialog(object):
         elif type == "text":
             model.set_value(iter, 1, "<b>%s - %s</b>\nUp to %sx%s" % (device.name, preset.name, preset.vcodec.width[1], preset.vcodec.height[1]))
 
-class PresetDialog(gobject.GObject):
+class PresetDialog(GObject.GObject):
     """
         Arista Preset Dialog
         ====================
         A dialog for viewing and editing preset properties.
     """
     __gsignals__ =  {
-        "changed": (gobject.SIGNAL_RUN_FIRST, None, ()),
-        "icon-changed": (gobject.SIGNAL_RUN_FIRST, None, ()),
+        "changed": (GObject.SIGNAL_RUN_FIRST, None, ()),
+        "icon-changed": (GObject.SIGNAL_RUN_FIRST, None, ()),
     }
 
     CONTAINER_LIST = ["WebM", "MP4", "MOV", "AVI", "MPEG PS", "MPEG TS", "DVD (VOB)", "Matroska", "Ogg", "FLV"]
@@ -1926,10 +1914,10 @@ class PresetDialog(gobject.GObject):
     }
 
     def __init__(self, preset):
-        gobject.GObject.__init__(self)
+        GObject.GObject.__init__(self)
         ui_path = arista.utils.get_path("ui", "preset.ui")
 
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         self.window = self.builder.get_object("preset_dialog")
@@ -1963,7 +1951,7 @@ class PresetDialog(gobject.GObject):
 
         # Set general values
         if preset.icon or preset.device.icon:
-            width, height = gtk.icon_size_lookup(gtk.ICON_SIZE_DIALOG)
+            width, height = Gtk.icon_size_lookup(Gtk.ICON_SIZE_DIALOG)
             image = _get_icon_pixbuf(preset.icon or preset.device.icon, width, height)
 
             if image:
@@ -1980,9 +1968,9 @@ class PresetDialog(gobject.GObject):
         self.extension.set_text(preset.extension or preset.device.extension)
 
         # Setup list models for combo boxes
-        cstore = gtk.ListStore(gobject.TYPE_STRING)
+        cstore = Gtk.ListStore(GObject.TYPE_STRING)
         self.container.set_model(cstore)
-        text_cell = gtk.CellRendererText()
+        text_cell = Gtk.CellRendererText()
         self.container.pack_start(text_cell, True)
         self.container.add_attribute(text_cell, 'text', 0)
 
@@ -1991,15 +1979,15 @@ class PresetDialog(gobject.GObject):
             iter = cstore.append()
             cstore.set_value(iter, 0, attr)
 
-        vstore = gtk.ListStore(gobject.TYPE_STRING)
+        vstore = Gtk.ListStore(GObject.TYPE_STRING)
         self.video_codec.set_model(vstore)
-        text_cell = gtk.CellRendererText()
+        text_cell = Gtk.CellRendererText()
         self.video_codec.pack_start(text_cell, True)
         self.video_codec.add_attribute(text_cell, 'text', 0)
 
-        astore = gtk.ListStore(gobject.TYPE_STRING)
+        astore = Gtk.ListStore(GObject.TYPE_STRING)
         self.audio_codec.set_model(astore)
-        text_cell = gtk.CellRendererText()
+        text_cell = Gtk.CellRendererText()
         self.audio_codec.pack_start(text_cell, True)
         self.audio_codec.add_attribute(text_cell, 'text', 0)
 
@@ -2028,9 +2016,9 @@ class PresetDialog(gobject.GObject):
         self.channels_max.set_value(preset.acodec.channels[1])
 
         # Setup effects
-        estore = gtk.ListStore(gobject.TYPE_STRING)
+        estore = Gtk.ListStore(GObject.TYPE_STRING)
         self.effect.set_model(estore)
-        text_cell = gtk.CellRendererText()
+        text_cell = Gtk.CellRendererText()
         self.effect.pack_start(text_cell, True)
         self.effect.add_attribute(text_cell, 'text', 0)
 
@@ -2061,22 +2049,22 @@ class PresetDialog(gobject.GObject):
 
     def on_export_clicked(self, widget):
         if len(self.preset.device.presets) > 1:
-            dialog = gtk.MessageDialog(self.window, buttons=gtk.BUTTONS_YES_NO, message_format=_("You are about to export %(count)d presets with the short name '%(shortname)s'. If you want to only export %(name)s then please first change the short name. Do you want to continue?") % {
+            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.BUTTONS_YES_NO, message_format=_("You are about to export %(count)d presets with the short name '%(shortname)s'. If you want to only export %(name)s then please first change the short name. Do you want to continue?") % {
                 "count": len(self.preset.device.presets),
                 "shortname": self.preset.device.short_name,
                 "name": self.preset.device.name + " - " + self.preset.name
             })
             response = dialog.run()
             dialog.destroy()
-            if response == gtk.RESPONSE_NO:
+            if response == Gtk.RESPONSE_NO:
                 return
 
-        dialog = gtk.FileChooserDialog(title=_("Export Preset"),
-                    action=gtk.FILE_CHOOSER_ACTION_SAVE,
-                    buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                             gtk.STOCK_SAVE, gtk.RESPONSE_ACCEPT))
+        dialog = Gtk.FileChooserDialog(title=_("Export Preset"),
+                    action=Gtk.FILE_CHOOSER_ACTION_SAVE,
+                    buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
+                             Gtk.STOCK_SAVE, Gtk.RESPONSE_ACCEPT))
         dialog.set_property("local-only", False)
-        filter = gtk.FileFilter()
+        filter = Gtk.FileFilter()
         filter.set_name("Arista Presets")
         filter.add_pattern("*.bz2")
         dialog.set_filter(filter)
@@ -2084,7 +2072,7 @@ class PresetDialog(gobject.GObject):
         dialog.set_current_name(self.preset.device.short_name + ".tar.bz2")
         response = dialog.run()
         dialog.hide()
-        if response == gtk.RESPONSE_ACCEPT:
+        if response == Gtk.RESPONSE_ACCEPT:
             filename = dialog.get_filename()
             if not filename.endswith(".tar.bz2"):
                 filename += ".tar.bz2"
@@ -2099,32 +2087,32 @@ class PresetDialog(gobject.GObject):
                 msg = _("Export of '%(name)s' complete.") % {
                     "name": self.preset.device.name + " - " + self.preset.name
                 }
-            dialog = gtk.MessageDialog(self.window, buttons=gtk.BUTTONS_OK, message_format=msg)
+            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.BUTTONS_OK, message_format=msg)
             dialog.run()
             dialog.destroy()
 
     def on_icon_clicked(self, widget):
         # Let user select new image, copy to presets folder, possibly rename
-        client = gconf.client_get_default()
-        dialog = gtk.FileChooserDialog(title=_("Choose Preset Icon..."),
-                    buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                             gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT))
+        client = GConf.Client.get_default()
+        dialog = Gtk.FileChooserDialog(title=_("Choose Preset Icon..."),
+                    buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
+                             Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
         dialog.set_property("local-only", False)
         dialog.set_current_folder(os.path.expanduser(os.path.join("~", "Pictures")))
-        filter = gtk.FileFilter()
+        filter = Gtk.FileFilter()
         filter.set_name("Image Files")
         filter.add_pattern("*.png")
         filter.add_pattern("*.svg")
         dialog.set_filter(filter)
         response = dialog.run()
         dialog.hide()
-        if response == gtk.RESPONSE_ACCEPT:
+        if response == Gtk.RESPONSE_ACCEPT:
             filename = dialog.get_filename()
             ext = filename.split(".")[-1]
             output = arista.utils.get_write_path("presets", self.preset.slug + "." + ext)
             shutil.copy(filename, output)
             self.preset.icon = "file://" + self.preset.slug + "." + ext
-            width, height = gtk.icon_size_lookup(gtk.ICON_SIZE_DIALOG)
+            width, height = Gtk.icon_size_lookup(Gtk.ICON_SIZE_DIALOG)
             image = _get_icon_pixbuf(self.preset.icon, width, height)
             self.image.set_from_pixbuf(image)
 
@@ -2397,12 +2385,12 @@ class PresetDialog(gobject.GObject):
 
         html_path = "file://" + html_path
 
-        if webkit:
+        if WebKit:
             CodecHelpDialog(html_path)
         else:
             webbrowser.open(html_path)
 
-gobject.type_register(PresetDialog)
+GObject.type_register(PresetDialog)
 
 class CodecHelpDialog(object):
     """
@@ -2413,18 +2401,18 @@ class CodecHelpDialog(object):
     def __init__(self, html_path):
         ui_path = arista.utils.get_path("ui", "codec.ui")
 
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         self.window = self.builder.get_object("codec_dialog")
 
         # Add web view to dialog
         scrolled_window = self.builder.get_object("scrolledwindow")
-        self.webkit = webkit.WebView()
-        scrolled_window.add(self.webkit)
+        self.WebKit = WebKit.WebView()
+        scrolled_window.add(self.WebKit)
 
         # Load documentation for specific codec
-        self.webkit.load_uri(html_path)
+        self.WebKit.load_uri(html_path)
 
         self.builder.connect_signals(self)
 
@@ -2442,7 +2430,7 @@ class AboutDialog(object):
     def __init__(self):
         ui_path = arista.utils.get_path("ui", "about.ui")
 
-        self.builder = gtk.Builder()
+        self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_path)
 
         self.window = self.builder.get_object("about_dialog")
@@ -2479,12 +2467,10 @@ if __name__ == "__main__":
                         or logging.INFO, format = "%(name)s [%(lineno)d]: " \
                         "%(levelname)s %(message)s")
 
-    # FIXME: OMGWTFBBQ gstreamer hijacks sys.argv unless we import AFTER we use
+    # FIXME: OMGWTFBBQ Gstreamer hijacks sys.argv unless we import AFTER we use
     # the optionparser stuff above...
     # This seems to be fixed http://bugzilla.gnome.org/show_bug.cgi?id=425847
-    # but in my testing it is NOT. Leaving hacks for now.
-    import gst
-    import gst.pbutils
+    from gi.repository import Gst
 
     arista.init()
 
@@ -2505,11 +2491,11 @@ if __name__ == "__main__":
     if hasattr(locale, "textdomain"):
         locale.textdomain("arista")
 
-    gtk.gdk.threads_init()
+    GLib.threads_init()
 
     # Set the default icon for all windows
     icon_path = arista.utils.get_path("ui", "icon.svg")
-    gtk.window_set_default_icon_from_file(icon_path)
+    Gtk.Window.set_default_icon_from_file(icon_path)
 
     main = MainWindow(options)
 
@@ -2518,5 +2504,4 @@ if __name__ == "__main__":
         _log.debug("Increasing niceness by 5...")
         os.nice(5)
 
-    gtk.main()
-
+    Gtk.main()
