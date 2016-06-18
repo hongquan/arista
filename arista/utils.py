@@ -266,3 +266,4 @@ def expand_capacity(current, new):
         return merge_range_and_tuple(new, current)
     union = tuple(set(current) | set(new))
     return tuple(sorted(union))
+

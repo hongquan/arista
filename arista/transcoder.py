@@ -449,7 +449,6 @@ class Transcoder(GObject.GObject):
 
             self.vcaps.set_value('width', width)
             self.vcaps.set_value('height', height)
-            print(self.vcaps.to_string())
 
             # TODO: Set framerate and pixel-aspect-ratio
             # when gir-gstreamer supports

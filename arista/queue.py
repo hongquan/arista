@@ -70,7 +70,7 @@ class QueueEntry:
             Stop this queue entry from processing.
         """
         if hasattr(self, "transcoder") and self.transcoder.pipe:
-            self.transcoder.pipe.send_event(Gst.event_new_eos())
+            self.transcoder.pipe.send_event(Gst.Event.new_eos())
             self.transcoder.start()
 
             self.force_stopped = True

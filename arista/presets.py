@@ -40,12 +40,14 @@
 """
 
 import os
+import sys
 import json
 import gettext
 import shutil
 import logging
 import subprocess
 import tarfile
+import platform
 import urllib.request
 from collections import OrderedDict
 
@@ -53,7 +55,7 @@ import gi
 
 gi.require_version('Gst', '1.0')
 gi.require_version('GstPbutils', '1.0')
-from gi.repository import GObject
+from gi.repository import GLib
 from gi.repository import Gst
 from gi.repository import GstPbutils
 
@@ -285,6 +287,9 @@ class Device:
         for preset in parsed.get("presets", []):
             acodec = preset.get("acodec", {})
             vcodec = preset.get("vcodec", {})
+            # faac is not available in 64-bit
+            if acodec and acodec.get('name') == 'faac' and is_ubuntu_gst_64bit():
+                acodec = faac_to_avenc_aac(acodec)
             device.presets[preset.get("name", "")] = Preset(**{
                 "name": preset.get("name", ""),
                 "description": preset.get("description", device.description),
@@ -332,7 +337,7 @@ class Preset:
             @type name: str
             @param name: The name of the preset, e.g. "High Quality"
             @type container: str
-            @param container: The container element name, e.g. ffmux_mp4
+            @param container: The container element name, e.g. avmux_mp4
             @type extension: str
             @param extension: The filename extension to use, e.g. mp4
             @type acodec: AudioCodec
@@ -395,12 +400,12 @@ class Preset:
             self.acodec.name,
             self.vcodec.name,
             # Elements used internally
-            "decodebin2",
+            "decodebin",
             "videobox",
-            "ffmpegcolorspace",
+            "videoconvert",
             "videoscale",
             "videorate",
-            "ffdeinterlace",
+            "avdeinterlace",
             "audioconvert",
             "audiorate",
             "audioresample",
@@ -422,10 +427,10 @@ class Preset:
             _log.info("Attempting to install elements: %s" % missingdesc)
             if GstPbutils.install_plugins_supported():
                 def install_done(result, null):
-                    if result == GstPbutils.INSTALL_PLUGINS_INSTALL_IN_PROGRESS:
+                    if result == GstPbutils.InstallPluginsReturn.INSTALL_IN_PROGRESS:
                         # Ignore start of installer message
                         pass
-                    elif result == GstPbutils.INSTALL_PLUGINS_SUCCESS:
+                    elif result == GstPbutils.InstallPluginsReturn.SUCCESS:
                         callback(self, True, *args)
                     else:
                         _log.error("Unable to install required elements!")
@@ -436,9 +441,9 @@ class Preset:
                                                   install_done, "")
             else:
                 _log.error("Installing elements not supported!")
-                GObject.idle_add(callback, self, False, *args)
+                GLib.idle_add(callback, self, False, *args)
         else:
-            GObject.idle_add(callback, self, True, *args)
+            GLib.idle_add(callback, self, True, *args)
 
 
 class Codec:
@@ -678,6 +683,40 @@ def remove_param_from_passes(passes, key):
             del d[key]
         out.append(make_pass_from_dict(d))
     return out
+
+
+def is_ubuntu_gst_64bit():
+    '''
+    Test if we are running with GStreamer 64bit on Ubuntu.
+    This test is used for determining if we need to replace faac with avenc_aac.
+    '''
+    # Return if we are not on Linux
+    if sys.platform != 'linux':
+        return False
+    # Return if running Python is not 64bit
+    if platform.architecture()[0] != '64bit':
+        return False
+    # Return if we are not on Ubuntu
+    if platform.dist()[0] != 'Ubuntu':
+        return False
+    # Return True if GStreamer version is <= 1.8.1
+    if tuple(Gst.version())[:3] <= (1, 8, 1):
+        return True
+    return False
+
+
+def faac_to_avenc_aac(adic):
+    '''
+    Change the acodec dict from faac to avenc_aac
+    '''
+    adic['name'] = 'avenc_aac'
+    try:
+        adic['passes'][0] += ' compliance=experimental'
+        adic['passes'] = remove_param_from_passes(adic['passes'], 'profile')
+    except KeyError:
+        adic['passes'] = ['compliance=experimental']
+    adic['container'] = 'qtmux'
+    return adic
 
 
 reset()
