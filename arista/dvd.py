@@ -35,7 +35,7 @@ class DvdInfo(GObject.GObject):
         a GObject signal when ready with the DVD info.
     """
     __gsignals__ = {
-        "ready": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,  (GObject.TYPE_PYOBJECT,)),
+        "ready": (GObject.SignalFlags.RUN_LAST, None,  (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self, path):

@@ -85,20 +85,20 @@ class TranscodeQueue(GObject.GObject):
     """
 
     __gsignals__ = {
-        "entry-added": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-added": (GObject.SignalFlags.RUN_LAST, None,
                        (GObject.TYPE_PYOBJECT,)),      # QueueEntry
-        "entry-discovered": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-discovered": (GObject.SignalFlags.RUN_LAST, None,
                             (GObject.TYPE_PYOBJECT,    # QueueEntry
                              GObject.TYPE_PYOBJECT,    # info
                              GObject.TYPE_PYOBJECT)),  # is_media
-        "entry-pass-setup": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-pass-setup": (GObject.SignalFlags.RUN_LAST, None,
                             (GObject.TYPE_PYOBJECT,)), # QueueEntry
-        "entry-start": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-start": (GObject.SignalFlags.RUN_LAST, None,
                        (GObject.TYPE_PYOBJECT,)),      # QueueEntry
-        "entry-error": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-error": (GObject.SignalFlags.RUN_LAST, None,
                        (GObject.TYPE_PYOBJECT,         # QueueEntry
                         GObject.TYPE_PYOBJECT,)),      # errorstr
-        "entry-complete": (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+        "entry-complete": (GObject.SignalFlags.RUN_LAST, None,
                           (GObject.TYPE_PYOBJECT,)),   # QueueEntry
     }
 

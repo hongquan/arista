@@ -90,8 +90,8 @@ def _new_combo_with_image(extra = []):
         @rtype: Gtk.ComboBox
             @return: The newly created combo box
     """
-    store = Gtk.ListStore(Gtk.gdk.Pixbuf, GObject.TYPE_STRING, *extra)
-    combo = Gtk.ComboBox(store)
+    store = Gtk.ListStore(GdkPixbuf.Pixbuf, GObject.TYPE_STRING, *extra)
+    combo = Gtk.ComboBox(model=store)
     pixbuf_cell = Gtk.CellRendererPixbuf()
     text_cell = Gtk.CellRendererText()
     combo.pack_start(pixbuf_cell, False)
@@ -114,7 +114,7 @@ def _get_icon_pixbuf(uri, width, height):
         @return: The pixbuf of the icon if it can be found
     """
     image = None
-    theme = Gtk.icon_theme_get_default()
+    theme = Gtk.IconTheme.get_default()
 
     if not uri:
         return image
@@ -128,7 +128,7 @@ def _get_icon_pixbuf(uri, width, height):
         if os.path.exists(path):
             image = GdkPixbuf.Pixbuf.new_from_file_at_size(path, width, height)
     elif uri.startswith("stock://"):
-        image = theme.load_icon(uri[8:], Gtk.ICON_SIZE_MENU, 0)
+        image = theme.load_icon(uri[8:], Gtk.IconSize.MENU, 0)
     else:
         raise ValueError(_("Unknown icon URI %(uri)s") % {
             "uri": uri
@@ -150,12 +150,13 @@ def _get_filename_icon(filename):
         @rtype: Gtk.ThemedIcon or None
         @return: The requested unloaded icon or nothing if it cannot be found
     """
-    theme = Gtk.icon_theme_get_default()
+    theme = Gtk.IconTheme.get_default()
 
     names = Gio.content_type_get_icon(Gio.content_type_guess(filename)).get_property("names")
-    icon = theme.choose_icon(names, Gtk.icon_size_lookup(Gtk.ICON_SIZE_MENU)[0], 0)
+    icon = theme.choose_icon(names, Gtk.icon_size_lookup(Gtk.IconSize.MENU)[0], 0)
 
     return icon
+
 
 class LogoWidget(Gtk.Widget):
     """
@@ -163,41 +164,48 @@ class LogoWidget(Gtk.Widget):
 
         See http://svn.gnome.org/viewvc/pyGtk/trunk/examples/Gtk/widget.py?view=markup
     """
+    __gtype_name__ = 'LogoWidget'
+
     def __init__(self):
-        Gtk.Widget.__init__(self)
+        super().__init__()
 
         # Load the logo overlay
         logo_path = arista.utils.get_path("ui", "logo.svg")
         self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(logo_path)
 
+    def do_get_preferred_width(self):
+        return 320, self.pixbuf.get_width()
+
+    def do_get_preferred_height(self):
+        return 180, self.pixbuf.get_height()
+
     def do_realize(self):
         """
             Realize the widget. Setup the window.
         """
-        self.set_realized(True)
 
-        attrs = Gdk.WindowAttr()
-        attrs.width = self.allocation.width
-        attrs.height = self.allocation.height
-        attrs.window_type = Gdk.WindowType.CHILD
-        attrs.wclass = Gdk.WindowWindowClass.INPUT_OUTPUT
-        attrs.event_mask = self.get_events() | Gdk.EventMask.EXPOSURE_MASK | Gdk.EventMask.BUTTON_PRESS_MASK
+        attr = Gdk.WindowAttr()
+        alloc = self.get_allocation()
+        attr.x = alloc.x
+        attr.y = alloc.y
+        attr.width = alloc.width
+        attr.height = alloc.height
+        attr.visual = self.get_visual()
+        attr.window_type = Gdk.WindowType.CHILD
+        attr.wclass = Gdk.WindowWindowClass.INPUT_OUTPUT
+        attr.event_mask = self.get_events() | Gdk.EventMask.EXPOSURE_MASK | Gdk.EventMask.BUTTON_PRESS_MASK
         a_mask = Gdk.WindowAttributesType.WMCLASS
 
         self.window = Gdk.Window(
             self.get_parent_window(),
-            attrs, a_mask)
+            attr, a_mask)
+
+        self.set_window(self.window)
+        self.register_window(self.window)
 
         self.window.set_user_data(self)
-
-        # style = self.get_style_context()
-        # style.attach(self.window)
-
-        # style.set_background(self.window)
-        r = self.allocation
-        self.window.move_resize(r.x, r.y, r.width, r.height)
-
-        # self.gc = style.fg_gc[Gtk.STATE_NORMAL]
+        self.set_realized(True)
+        self.window.set_background_pattern(None)
 
     def do_unrealize(self):
         """
@@ -205,38 +213,16 @@ class LogoWidget(Gtk.Widget):
         """
         self.window.destroy()
 
-    def do_size_request(self, requisition):
-        """
-            Request a minimum size.
-        """
-        requisition.width = self.pixbuf.get_width()
-        requisition.height = self.pixbuf.get_height()
-
-    def do_size_allocate(self, allocation):
-        """
-            Our size was allocated, save it!
-        """
-        self.allocation = allocation
-
-        if self.get_realized():
-            r = allocation
-            self.window.move_resize(r.x, r.y, r.width, r.height)
-
-    def do_expose_event(self, event):
-        """
-            Draw the logo.
-        """
-        x, y, w, h = self.allocation
-
-        cr = self.window.cairo_create()
+    def do_draw(self, cr):
+        alloc = self.get_allocation()
+        w, h = alloc.width, alloc.height
 
         # Base the background color on a 50% luminosity version of the theme's
         # selected color (the color you usually see in progress bars, for
         # example) and make the gradient go from slightly lighter to slightly
         # darker.
-        color = self.style.bg[Gtk.STATE_SELECTED]
-        r, g, b = color.red / 65535.0, color.green / 65535.0, \
-                  color.blue / 65535.0
+        color = self.get_style_context().get_background_color(Gtk.StateFlags.SELECTED)
+        r, g, b = color.red, color.green, color.blue
         avg = (r + g + b) / 3.0
         r, g, b = [i + 0.5 - avg for i in [r, g, b]]
 
@@ -276,13 +262,9 @@ class LogoWidget(Gtk.Widget):
         cr.set_line_width(1.0)
         cr.rectangle(0, 0, w, h)
         cr.stroke()
+        Gdk.cairo_set_source_pixbuf(cr, self.pixbuf, 0, 0)
+        cr.paint()
 
-        # Draw the logo svg centered in the widget
-        self.window.draw_pixbuf(self.gc, self.pixbuf, 0, 0,
-                                (w / 2) - (self.pixbuf.get_width() / 2),
-                                (h / 2) - (self.pixbuf.get_height() / 2))
-
-GObject.type_register(LogoWidget)
 
 class MainWindow(object):
     """
@@ -368,6 +350,7 @@ class MainWindow(object):
         self.preview.hide()
         self.hbox_progress.hide()
         self.image_preview.show_all()
+        self.logo.show()
         self.window.show()
 
         # Are we using the simplified interface? Hide stuff!
@@ -375,7 +358,7 @@ class MainWindow(object):
             self.builder.get_object("menubar").hide()
             self.toolbar.hide()
             self.window.resize(320, 240)
-            self.window.set_position(Gtk.WIN_POS_CENTER_ALWAYS)
+            self.window.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
 
             device = arista.presets.get()[self.runoptions.device]
 
@@ -405,7 +388,8 @@ class MainWindow(object):
             None is returned.
         """
         # Get logo dimensions, pixbuf dimensions
-        w, h = self.logo.allocation.width, self.logo.allocation.height
+        alloc = self.logo.get_allocation()
+        w, h = alloc.width, alloc.height
         lw, lh = self.logo.pixbuf.get_width(), self.logo.pixbuf.get_height()
         # Convert coordinates from widget-local to pixbuf-local
         lx = x - ((w - lw) / 2)
@@ -463,7 +447,7 @@ class MainWindow(object):
         """
         try:
             if self.transcoder:
-                if self.transcoder.state in [Gst.STATE_READY, Gst.STATE_PAUSED]:
+                if self.transcoder.state in [Gst.State.READY, Gst.State.PAUSED]:
                     self.transcoder.start()
 
                 self.transcoder.pipe.send_event(Gst.event_new_eos())
@@ -475,7 +459,7 @@ class MainWindow(object):
         _log.debug(_("Cleaning up and flushing buffers..."))
 
         def waiting_to_quit():
-            if not self.transcoder or self.transcoder.state == Gst.STATE_NULL:
+            if not self.transcoder or self.transcoder.state == Gst.State.NULL:
                 GObject.idle_add(Gtk.main_quit)
                 return False
             else:
@@ -551,7 +535,7 @@ class MainWindow(object):
         """
             Show the preferences dialog.
         """
-        PrefsDialog()
+        PrefsDialog(self.window)
 
     def on_show_toolbar_toggled(self, widget):
         """
@@ -581,20 +565,20 @@ class MainWindow(object):
                 "infile": entry.transcoder.infile,
             })
 
-            Gtk.gdk.threads_enter()
+            Gdk.threads_enter()
 
             msg = "The input file or device contains no audio or video " \
                   "streams and will be removed from the queue."
 
             dialog = Gtk.MessageDialog(self.window,
-                            Gtk.DIALOG_MODAL | Gtk.DIALOG_DESTROY_WITH_PARENT,
-                            type = Gtk.MESSAGE_ERROR,
-                            buttons = Gtk.BUTTONS_OK,
+                            Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+                            type = Gtk.MessageType.ERROR,
+                            buttons = Gtk.ButtonsType.OK,
                             message_format = msg)
             dialog.set_title(_("Error with input!"))
             dialog.run()
             dialog.destroy()
-            Gtk.gdk.threads_leave()
+            Gdk.threads_leave()
             self.on_queue_entry_complete(queue, entry)
         else:
             entry.transcoder.connect("pass-setup",
@@ -642,7 +626,7 @@ class MainWindow(object):
         entry.transcoder.stop()
 
         if Notify and not entry.force_stopped:
-            theme = Gtk.icon_theme_get_default()
+            theme = Gtk.IconTheme.get_default()
             icon_info = theme.lookup_icon("dialog-error", 64, 0)
             if icon_info:
                 icon = icon_info.get_filename()
@@ -719,11 +703,11 @@ class MainWindow(object):
 
         msg_name = msg.structure.get_name()
         if msg_name == "prepare-xwindow-id":
-            Gtk.gdk.threads_enter()
+            Gdk.threads_enter()
             imagesink = msg.src
             imagesink.set_property("force-aspect-ratio", True)
             imagesink.set_xwindow_id(self.preview.window.xid)
-            Gtk.gdk.threads_leave()
+            Gdk.threads_leave()
 
     def on_status_update(self):
         """
@@ -732,7 +716,7 @@ class MainWindow(object):
         percent = 0.0
         state = self.transcoder.state
 
-        if state != Gst.STATE_PAUSED:
+        if state != Gst.State.PAUSED:
             try:
                 percent, time_rem = self.transcoder.status
 
@@ -764,7 +748,7 @@ class MainWindow(object):
                     "file_info": file_info,
                 }
 
-                Gtk.gdk.threads_enter()
+                Gdk.threads_enter()
 
                 if percent == 0.0:
                     self.progress.pulse()
@@ -772,12 +756,12 @@ class MainWindow(object):
                     self.progress.set_fraction(percent)
 
                 self.progress.set_text(info_string)
-                Gtk.gdk.threads_leave()
+                Gdk.threads_leave()
             except arista.transcoder.TranscoderStatusException as e:
                 _log.debug(str(e))
                 self.progress.pulse()
 
-        return percent < 1.0 and state != Gst.STATE_NULL
+        return percent < 1.0 and state != Gst.State.NULL
 
     def on_cancel_clicked(self, widget):
         """
@@ -788,13 +772,13 @@ class MainWindow(object):
 
     def on_install_device(self, widget):
         dialog = Gtk.FileChooserDialog(title=_("Choose Source File..."),
-                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
-                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.ResponseType.ACCEPT))
         dialog.set_property("local-only", False)
         dialog.set_current_folder(self.last_open_path)
         response = dialog.run()
         dialog.hide()
-        if response == Gtk.RESPONSE_ACCEPT:
+        if response == Gtk.ResponseType.ACCEPT:
             filename = dialog.get_filename()
             client = GConf.Client.get_default()
             client.set_string(CONFIG_PATH + "/last_open_path",
@@ -803,7 +787,7 @@ class MainWindow(object):
                 devices = arista.presets.extract(open(filename))
             except Exception as e:
                 _log.error(str(e))
-                dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_ERROR, buttons=Gtk.BUTTONS_CLOSE, message_format=_("Problem importing preset. This file does not appear to be a valid Arista preset!"))
+                dialog = Gtk.MessageDialog(self.window, type=Gtk.MessageType.ERROR, buttons=Gtk.ButtonsType.CLOSE, message_format=_("Problem importing preset. This file does not appear to be a valid Arista preset!"))
                 dialog.run()
                 dialog.destroy()
                 return
@@ -821,13 +805,14 @@ class MainWindow(object):
                     }, icon)
                     notice.show()
 
+
 class PrefsDialog(object):
     """
         Arista Preferences Dialog
         =========================
         A dialog to edit preferences and presets.
     """
-    def __init__(self):
+    def __init__(self, parent_window):
         ui_path = arista.utils.get_path("ui", "prefs.ui")
 
         # Load the interface definition file
@@ -836,6 +821,7 @@ class PrefsDialog(object):
 
         # Shortcuts for accessing widgets
         self.window = self.builder.get_object("prefs_dialog")
+        self.window.set_transient_for(parent_window)
         self.check_inputs = self.builder.get_object("check_inputs")
         self.check_show_live = self.builder.get_object("check_show_live")
         self.spin_live_fps = self.builder.get_object("spin_live_fps")
@@ -929,11 +915,11 @@ class PrefsDialog(object):
         self.spin_live_fps.set_value(entry.get_value().get_int())
 
     def on_reset_clicked(self, widget):
-        dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_WARNING, buttons=Gtk.BUTTONS_YES_NO, message_format=_("Are you sure you want to reset your device presets? Doing so will permanently remove any modifications you have made to presets that ship with or share a short name with presets that ship with Arista!"))
+        dialog = Gtk.MessageDialog(self.window, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.YES_NO, message_format=_("Are you sure you want to reset your device presets? Doing so will permanently remove any modifications you have made to presets that ship with or share a short name with presets that ship with Arista!"))
         response = dialog.run()
         dialog.destroy()
 
-        if response == Gtk.RESPONSE_YES:
+        if response == Gtk.ResponseType.YES:
             # Reset all presets that ship with Arista to the factory default.
             # This does not touch user-made presets unless the shortname
             # matches one of the factory default preset shortnames.
@@ -1182,7 +1168,7 @@ class AddDialog(object):
         column = Gtk.TreeViewColumn(_("Device Preset"))
         column.pack_start(pixbuf_renderer, False)
         column.set_attributes(pixbuf_renderer, pixbuf = 0)
-        column.pack_start(preset_renderer)
+        column.pack_start(preset_renderer, True)
         column.set_attributes(preset_renderer, markup = 1)
         self.presets_view.append_column(column)
 
@@ -1232,8 +1218,8 @@ class AddDialog(object):
             Setup the source widget. Creates a combo box or a file input button
             depending on the settings and available devices.
         """
-        theme = Gtk.icon_theme_get_default()
-        size = Gtk.icon_size_lookup(Gtk.ICON_SIZE_MENU)[0]
+        theme = Gtk.IconTheme.get_default()
+        size = Gtk.icon_size_lookup(Gtk.IconSize.MENU)[0]
 
         # Already exists? Remove it!
         if self.source:
@@ -1301,7 +1287,7 @@ class AddDialog(object):
                                                     self.on_disc_lost)
 
         iter = model.append()
-        icon = Gtk.stock_lookup(Gtk.STOCK_OPEN)[0]
+        icon = Gtk.stock_lookup(Gtk.STOCK_OPEN)
         model.set_value(iter, 0, theme.load_icon(icon, size, 0))
         model.set_value(iter, 1, _("Choose File..."))
 
@@ -1315,7 +1301,7 @@ class AddDialog(object):
         # Add properties button to set source properties like subtitles
         source_prop_image = Gtk.Image()
         source_prop_image.set_from_stock(Gtk.STOCK_PROPERTIES,
-                                         Gtk.ICON_SIZE_MENU)
+                                         Gtk.IconSize.MENU)
         source_properties = Gtk.Button()
         source_properties.add(source_prop_image)
         source_properties.connect("clicked", self.on_source_properties)
@@ -1323,9 +1309,9 @@ class AddDialog(object):
         if not self.source_hbox:
             self.source_hbox = Gtk.HBox()
             self.source_hbox.pack_end(source_properties, expand = False)
-            self.table.attach(self.source_hbox, 1, 2, 0, 1, yoptions = Gtk.FILL)
+            self.table.attach(self.source_hbox, 1, 2, 0, 1, yoptions = Gtk.AttachOptions.FILL)
 
-        self.source_hbox.pack_start(self.source)
+        self.source_hbox.pack_start(self.source, True, True, 0)
 
         # Attach and show the source
         self.source_hbox.show_all()
@@ -1499,8 +1485,8 @@ class AddDialog(object):
         """
             The source combo box or file chooser button has changed, update!
         """
-        theme = Gtk.icon_theme_get_default()
-        size = Gtk.ICON_SIZE_MENU
+        theme = Gtk.IconTheme.get_default()
+        size = Gtk.IconSize.MENU
         width, height = Gtk.icon_size_lookup(size)
 
         iter = widget.get_active_iter()
@@ -1508,14 +1494,14 @@ class AddDialog(object):
         item = model.get_value(iter, 1)
         if item == _("Choose File..."):
             dialog = Gtk.FileChooserDialog(title=_("Choose Source File..."),
-                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
-                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.ResponseType.ACCEPT))
             dialog.set_property("local-only", False)
             dialog.set_current_folder(self.last_open_path)
             response = dialog.run()
             dialog.hide()
             filename = None
-            if response == Gtk.RESPONSE_ACCEPT:
+            if response == Gtk.ResponseType.ACCEPT:
                 if self.fileiter:
                     model.remove(self.fileiter)
                 filename = dialog.get_filename()
@@ -1532,14 +1518,14 @@ class AddDialog(object):
 
         elif item == _("Choose Directory..."):
             dialog = Gtk.FileChooserDialog(title=_("Choose Source Directory..."),
-                        action=Gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER,
-                        buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
-                                 Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
+                        action=Gtk.FileChooserAction.SELECT_FOLDER,
+                        buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
+                                 Gtk.STOCK_OPEN, Gtk.ResponseType.ACCEPT))
             dialog.set_property("local-only", False)
             dialog.set_current_folder(self.last_open_path)
             response = dialog.run()
             dialog.hide()
-            if response == Gtk.RESPONSE_ACCEPT:
+            if response == Gtk.ResponseType.ACCEPT:
                 if self.fileiter:
                     model.remove(self.fileiter)
                 directory = dialog.get_current_folder()
@@ -1560,7 +1546,7 @@ class AddDialog(object):
         """
             Set the source selector widget to a path.
         """
-        size = Gtk.ICON_SIZE_MENU
+        size = Gtk.IconSize.MENU
         width, height = Gtk.icon_size_lookup(size)
 
         model = self.source.get_model()
@@ -1627,14 +1613,14 @@ class AddDialog(object):
             (and optionally installing) required GStreamer elements.
         """
         if not can_encode:
-            Gtk.gdk.threads_enter()
-            dialog = Gtk.MessageDialog(self.window, type = Gtk.MESSAGE_ERROR, buttons = Gtk.BUTTONS_OK, message_format = _("Cannot add conversion to queue because of missing elements!"))
+            Gdk.threads_enter()
+            dialog = Gtk.MessageDialog(self.window, type = Gtk.MessageType.ERROR, buttons = Gtk.ButtonsType.OK, message_format = _("Cannot add conversion to queue because of missing elements!"))
             dialog.run()
             dialog.destroy()
-            Gtk.gdk.threads_leave()
+            Gdk.threads_leave()
             return
 
-        Gtk.gdk.threads_enter()
+        Gdk.threads_enter()
         iter = self.source.get_active_iter()
         model = self.source.get_model()
         inpath = model.get_value(iter, 2)[0]
@@ -1668,7 +1654,7 @@ class AddDialog(object):
 
         self.window.destroy()
 
-        Gtk.gdk.threads_leave()
+        Gdk.threads_leave()
 
     def on_new_clicked(self, widget):
         """
@@ -1769,11 +1755,11 @@ class AddDialog(object):
         model, iter = self.presets_view.get_selection().get_selected()
         device, preset = model.get_value(iter, 2)
 
-        dialog = Gtk.MessageDialog(self.window, type=Gtk.MESSAGE_WARNING, buttons=Gtk.BUTTONS_YES_NO, message_format="Are you sure you want to delete the %(preset)s preset?" % { "preset": device.name + " - " + preset.name })
+        dialog = Gtk.MessageDialog(self.window, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.YES_NO, message_format="Are you sure you want to delete the %(preset)s preset?" % { "preset": device.name + " - " + preset.name })
         response = dialog.run()
         dialog.destroy()
 
-        if response == Gtk.RESPONSE_YES:
+        if response == Gtk.ResponseType.YES:
             devices = arista.presets.get()
             name = ".".join(os.path.basename(device.filename).split(".")[:-1])
 
@@ -1823,8 +1809,8 @@ class PresetDialog(GObject.GObject):
         A dialog for viewing and editing preset properties.
     """
     __gsignals__ =  {
-        "changed": (GObject.SIGNAL_RUN_FIRST, None, ()),
-        "icon-changed": (GObject.SIGNAL_RUN_FIRST, None, ()),
+        "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "icon-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     CONTAINER_LIST = ["WebM", "MP4", "MOV", "AVI", "MPEG PS", "MPEG TS", "DVD (VOB)", "Matroska", "Ogg", "FLV"]
@@ -1951,7 +1937,7 @@ class PresetDialog(GObject.GObject):
 
         # Set general values
         if preset.icon or preset.device.icon:
-            width, height = Gtk.icon_size_lookup(Gtk.ICON_SIZE_DIALOG)
+            width, height = Gtk.icon_size_lookup(Gtk.IconSize.DIALOG)
             image = _get_icon_pixbuf(preset.icon or preset.device.icon, width, height)
 
             if image:
@@ -2049,20 +2035,20 @@ class PresetDialog(GObject.GObject):
 
     def on_export_clicked(self, widget):
         if len(self.preset.device.presets) > 1:
-            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.BUTTONS_YES_NO, message_format=_("You are about to export %(count)d presets with the short name '%(shortname)s'. If you want to only export %(name)s then please first change the short name. Do you want to continue?") % {
+            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.ButtonsType.YES_NO, message_format=_("You are about to export %(count)d presets with the short name '%(shortname)s'. If you want to only export %(name)s then please first change the short name. Do you want to continue?") % {
                 "count": len(self.preset.device.presets),
                 "shortname": self.preset.device.short_name,
                 "name": self.preset.device.name + " - " + self.preset.name
             })
             response = dialog.run()
             dialog.destroy()
-            if response == Gtk.RESPONSE_NO:
+            if response == Gtk.ResponseType.NO:
                 return
 
         dialog = Gtk.FileChooserDialog(title=_("Export Preset"),
-                    action=Gtk.FILE_CHOOSER_ACTION_SAVE,
-                    buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
-                             Gtk.STOCK_SAVE, Gtk.RESPONSE_ACCEPT))
+                    action=Gtk.FileChooserAction.SAVE,
+                    buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
+                             Gtk.STOCK_SAVE, Gtk.ResponseType.ACCEPT))
         dialog.set_property("local-only", False)
         filter = Gtk.FileFilter()
         filter.set_name("Arista Presets")
@@ -2072,7 +2058,7 @@ class PresetDialog(GObject.GObject):
         dialog.set_current_name(self.preset.device.short_name + ".tar.bz2")
         response = dialog.run()
         dialog.hide()
-        if response == Gtk.RESPONSE_ACCEPT:
+        if response == Gtk.ResponseType.ACCEPT:
             filename = dialog.get_filename()
             if not filename.endswith(".tar.bz2"):
                 filename += ".tar.bz2"
@@ -2087,7 +2073,7 @@ class PresetDialog(GObject.GObject):
                 msg = _("Export of '%(name)s' complete.") % {
                     "name": self.preset.device.name + " - " + self.preset.name
                 }
-            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.BUTTONS_OK, message_format=msg)
+            dialog = Gtk.MessageDialog(self.window, buttons=Gtk.ButtonsType.OK, message_format=msg)
             dialog.run()
             dialog.destroy()
 
@@ -2095,8 +2081,8 @@ class PresetDialog(GObject.GObject):
         # Let user select new image, copy to presets folder, possibly rename
         client = GConf.Client.get_default()
         dialog = Gtk.FileChooserDialog(title=_("Choose Preset Icon..."),
-                    buttons=(Gtk.STOCK_CANCEL, Gtk.RESPONSE_REJECT,
-                             Gtk.STOCK_OPEN, Gtk.RESPONSE_ACCEPT))
+                    buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
+                             Gtk.STOCK_OPEN, Gtk.ResponseType.ACCEPT))
         dialog.set_property("local-only", False)
         dialog.set_current_folder(os.path.expanduser(os.path.join("~", "Pictures")))
         filter = Gtk.FileFilter()
@@ -2106,13 +2092,13 @@ class PresetDialog(GObject.GObject):
         dialog.set_filter(filter)
         response = dialog.run()
         dialog.hide()
-        if response == Gtk.RESPONSE_ACCEPT:
+        if response == Gtk.ResponseType.ACCEPT:
             filename = dialog.get_filename()
             ext = filename.split(".")[-1]
             output = arista.utils.get_write_path("presets", self.preset.slug + "." + ext)
             shutil.copy(filename, output)
             self.preset.icon = "file://" + self.preset.slug + "." + ext
-            width, height = Gtk.icon_size_lookup(Gtk.ICON_SIZE_DIALOG)
+            width, height = Gtk.icon_size_lookup(Gtk.IconSize.DIALOG)
             image = _get_icon_pixbuf(self.preset.icon, width, height)
             self.image.set_from_pixbuf(image)
 
@@ -2390,7 +2376,6 @@ class PresetDialog(GObject.GObject):
         else:
             webbrowser.open(html_path)
 
-GObject.type_register(PresetDialog)
 
 class CodecHelpDialog(object):
     """

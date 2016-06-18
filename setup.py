@@ -23,7 +23,7 @@ if not hasattr(DistributionMetadata, "zip_safe"):
 data_files = [
     (os.path.join("share", "applications"), ["arista.desktop"]),
     (os.path.join("share", "man/man1"), [
-        "man/arista-gtk.1", "man/arista-transcode.1"]),
+        "man/arista-Gtk.1", "man/arista-transcode.1"]),
     (os.path.join("share", "doc", "arista"), [
         "README.md", "LICENSE", "AUTHORS"
     ]),

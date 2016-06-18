@@ -411,7 +411,7 @@ class Preset:
         missing = []
         missingdesc = ""
         for element in elements:
-            if not Gst.element_factory_find(element):
+            if not Gst.ElementFactory.find(element):
                 missing.append(GstPbutils.missing_element_installer_detail_new(element))
                 if missingdesc:
                     missingdesc += ", %s" % element

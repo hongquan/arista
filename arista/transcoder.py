@@ -157,16 +157,16 @@ class Transcoder(GObject.GObject):
         The transcoder - converts media between formats.
     """
     __gsignals__ = {
-        "discovered": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "discovered": (GObject.SignalFlags.RUN_LAST, None,
                       (GObject.TYPE_PYOBJECT,      # info
                        GObject.TYPE_PYOBJECT)),    # is_media
-        "pass-setup": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
-        "pass-complete": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
-        "message": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "pass-setup": (GObject.SignalFlags.RUN_LAST, None, tuple()),
+        "pass-complete": (GObject.SignalFlags.RUN_LAST, None, tuple()),
+        "message": (GObject.SignalFlags.RUN_LAST, None,
                    (GObject.TYPE_PYOBJECT,         # bus
                     GObject.TYPE_PYOBJECT)),       # message
-        "complete": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE, tuple()),
-        "error": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "complete": (GObject.SignalFlags.RUN_LAST, None, tuple()),
+        "error": (GObject.SignalFlags.RUN_LAST, None,
                  (GObject.TYPE_PYOBJECT,)),        # error
     }
 

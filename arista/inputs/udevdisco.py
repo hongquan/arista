@@ -136,13 +136,13 @@ class InputFinder(GObject.GObject):
     """
 
     __gsignals__ = {
-        "disc-found": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "disc-found": (GObject.SignalFlags.RUN_LAST, None,
                        (GObject.TYPE_PYOBJECT, GObject.TYPE_PYOBJECT)),
-        "disc-lost": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "disc-lost": (GObject.SignalFlags.RUN_LAST, None,
                       (GObject.TYPE_PYOBJECT, GObject.TYPE_PYOBJECT)),
-        "v4l-capture-found": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "v4l-capture-found": (GObject.SignalFlags.RUN_LAST, None,
                               (GObject.TYPE_PYOBJECT,)),
-        "v4l-capture-lost": (GObject.SignalFlags.RUN_LAST, GObject.TYPE_NONE,
+        "v4l-capture-lost": (GObject.SignalFlags.RUN_LAST, None,
                              (GObject.TYPE_PYOBJECT,)),
 
     }

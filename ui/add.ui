@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <requires lib="gtk+" version="2.16"/>
+  <requires lib="gtk+" version="3.10"/>
   <!-- interface-naming-policy project-wide -->
   <object class="GtkWindow" id="add_dialog">
     <property name="width_request">350</property>
@@ -10,14 +10,16 @@
     <property name="title" translatable="yes">Create Conversion</property>
     <property name="window_position">center</property>
     <child>
-      <object class="GtkVBox" id="dialog-vbox1">
+      <object class="GtkBox" id="dialog-vbox1">
         <property name="visible">True</property>
         <property name="can_focus">False</property>
+        <property name="orientation">vertical</property>
         <property name="spacing">6</property>
         <child>
-          <object class="GtkVBox" id="vbox1">
+          <object class="GtkBox" id="vbox1">
             <property name="visible">True</property>
             <property name="can_focus">False</property>
+            <property name="orientation">vertical</property>
             <property name="spacing">2</property>
             <child>
               <object class="GtkTable" id="settings_table">
@@ -141,9 +143,10 @@
           </packing>
         </child>
         <child>
-          <object class="GtkHBox" id="hbox1">
+          <object class="GtkBox" id="hbox1">
             <property name="visible">True</property>
             <property name="can_focus">False</property>
+            <property name="orientation">horizontal</property>
             <child>
               <object class="GtkButton" id="button_new">
                 <property name="visible">True</property>
