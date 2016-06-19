@@ -52,7 +52,7 @@ from arista.discoverer import get_tags_dict, get_mimetype, \
 _ = gettext.gettext
 
 # Initialize threads for Gstreamer
-GObject.threads_init()
+# GObject.threads_init()
 
 status_time = None
 status_msg = ""

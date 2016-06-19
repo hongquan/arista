@@ -214,12 +214,10 @@ class InputFinder(GObject.GObject):
         """
         pass
 
-GObject.type_register(InputFinder)
-
 if __name__ == "__main__":
     # Run a test to print out DVD-capable devices and whether or not they
     # have video disks in them at the moment.
-    GLib.threads_init()
+    # GLib.threads_init()
 
     def found(finder, device, label):
         print("{}: {}".format(device.path, label))

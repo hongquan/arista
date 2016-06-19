@@ -46,10 +46,14 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GConf', '2.0')
 gi.require_version('Notify', '0.7')
 gi.require_version('WebKit', '3.0')
+gi.require_version('GstVideo', '1.0')
 from gi.repository import GLib, GObject, Gio
 from gi.repository import Gtk, Gdk, Gst, GConf
 from gi.repository import GdkPixbuf
 from gi.repository import Notify
+# Needed for window.get_xid(), xvimagesink.set_window_handle(), respectively:
+# Ref: https://wiki.ubuntu.com/Novacut/GStreamer1.0#prepare-xwindow-id
+from gi.repository import GdkX11, GstVideo
 
 _log = logging.getLogger("arista-Gtk")
 
@@ -272,6 +276,8 @@ class MainWindow(object):
         output device, and preset for transcoding as well as managing the
         transcoding queue.
     """
+    preview_window_handle = None
+
     def __init__(self, runoptions):
         self.runoptions = runoptions
 
@@ -525,6 +531,7 @@ class MainWindow(object):
         # Hide live preview while we wait for the item to finish
         self.image_preview.show()
         self.preview.hide()
+        self.preview_window_handle = None
         self.hbox_progress.hide()
 
     def on_about(self, widget):
@@ -567,7 +574,7 @@ class MainWindow(object):
                 "infile": entry.transcoder.infile,
             })
 
-            Gdk.threads_enter()
+            # Gdk.threads_enter()
 
             msg = "The input file or device contains no audio or video " \
                   "streams and will be removed from the queue."
@@ -580,7 +587,7 @@ class MainWindow(object):
             dialog.set_title(_("Error with input!"))
             dialog.run()
             dialog.destroy()
-            Gdk.threads_leave()
+            # Gdk.threads_leave()
             self.on_queue_entry_complete(queue, entry)
         else:
             entry.transcoder.connect("pass-setup",
@@ -617,6 +624,7 @@ class MainWindow(object):
                 bus.connect("sync-message::element", self.on_sync_msg)
                 self.preview.show()
                 self.image_preview.hide()
+                self.preview_window_handle = self.preview.get_property('window').get_xid()
 
         self.hbox_progress.show()
 
@@ -657,6 +665,7 @@ class MainWindow(object):
 
         self.image_preview.show()
         self.preview.hide()
+        self.preview_window_handle = None
         self.hbox_progress.hide()
 
     def on_queue_entry_complete(self, queue, entry):
@@ -687,6 +696,7 @@ class MainWindow(object):
 
         self.image_preview.show()
         self.preview.hide()
+        self.preview_window_handle = None
         self.hbox_progress.hide()
 
     def on_preview_sink_element_added(self, autovideosink, element):
@@ -706,18 +716,16 @@ class MainWindow(object):
             Prepare the preview drawing area so that the video preview is
             rendered there.
         """
-        struct = msg.get_structure()
-        if struct is None:
+        set_preview = GstVideo.is_video_overlay_prepare_window_handle_message(msg) \
+            and self.preview_window_handle
+        # Gdk.threads_leave()
+        if not set_preview:
             return
-
-        msg_name = struct.get_name()
-        # prepare-window-handle, have-window-handle
-        if msg_name == "prepare-window-handle":
-            Gdk.threads_enter()
-            imagesink = msg.src
-            imagesink.set_property("force-aspect-ratio", True)
-            imagesink.set_window_handle(self.preview.get_property('window').get_xid())
-            Gdk.threads_leave()
+        # Gdk.threads_enter()
+        imagesink = msg.src
+        imagesink.set_property("force-aspect-ratio", True)
+        imagesink.set_window_handle(self.preview_window_handle)
+        # Gdk.threads_leave()
 
     def on_status_update(self):
         """
@@ -758,7 +766,7 @@ class MainWindow(object):
                     "file_info": file_info,
                 }
 
-                Gdk.threads_enter()
+                # Gdk.threads_enter()
 
                 if percent == 0.0:
                     self.progress.pulse()
@@ -766,7 +774,7 @@ class MainWindow(object):
                     self.progress.set_fraction(percent)
 
                 self.progress.set_text(info_string)
-                Gdk.threads_leave()
+                # Gdk.threads_leave()
             except arista.transcoder.TranscoderStatusException as e:
                 _log.debug(str(e))
                 self.progress.pulse()
@@ -1618,14 +1626,14 @@ class AddDialog(object):
             (and optionally installing) required GStreamer elements.
         """
         if not can_encode:
-            Gdk.threads_enter()
+            # Gdk.threads_enter()
             dialog = Gtk.MessageDialog(self.window, type = Gtk.MessageType.ERROR, buttons = Gtk.ButtonsType.OK, message_format = _("Cannot add conversion to queue because of missing elements!"))
             dialog.run()
             dialog.destroy()
-            Gdk.threads_leave()
+            # Gdk.threads_leave()
             return
 
-        Gdk.threads_enter()
+        # Gdk.threads_enter()
         iter = self.source.get_active_iter()
         model = self.source.get_model()
         inpath = model.get_value(iter, 2)[0]
@@ -1658,7 +1666,7 @@ class AddDialog(object):
 
         self.window.destroy()
 
-        Gdk.threads_leave()
+        # Gdk.threads_leave()
 
     def on_new_clicked(self, widget):
         """

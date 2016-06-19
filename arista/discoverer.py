@@ -97,7 +97,7 @@ def get_range_value(gstruct, fieldname):
     return range(int(m.group(1)), int(m.group(2)) + 1)
 
 
-def get_array_value(gstruct, fieldname, coerce=int):
+def get_list_value(gstruct, fieldname, coerce=int):
     '''
     Get value as list in a Gst.Structure
     '''

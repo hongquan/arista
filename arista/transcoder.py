@@ -54,7 +54,7 @@ from gi.repository import GstPbutils
 
 from . import discoverer
 from .discoverer import is_audio, is_video, get_range_value, \
-    get_video_dimension, get_array_value
+    get_video_dimension, get_list_value
 from .presets import remove_param_from_passes
 from .utils import expand_capacity
 
@@ -534,14 +534,14 @@ class Transcoder(GObject.GObject):
                 if struct.has_field('rate'):
                     new = get_range_value(struct, 'rate')
                     if not new:
-                        new = get_array_value(struct, 'rate')
+                        new = get_list_value(struct, 'rate')
                     if new:
                         capable_rates = expand_capacity(capable_rates, new)
                         self.preset.acodec.rate = capable_rates
                 if struct.has_field('channels'):
                     new = get_range_value(struct, 'channels')
                     if not new:
-                        new = get_array_value(struct, 'channels')
+                        new = get_list_value(struct, 'channels')
                     if new:
                         capable_channels = expand_capacity(capable_channels, new)
                         self.preset.acodec.channels = capable_channels
